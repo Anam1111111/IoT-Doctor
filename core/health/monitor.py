@@ -66,6 +66,6 @@ class HealthMonitor:
     def _ram_decreasing_steadily(self):
         if len(self.ram_history) < 10:
             return False
-        # Check if the last 10 readings are consistently non-increasing
+        # Check if the last 10 readings are strictly decreasing
         recent = self.ram_history[-10:]
-        return all(recent[i] >= recent[i + 1] for i in range(len(recent) - 1))
+        return all(recent[i] > recent[i + 1] for i in range(len(recent) - 1))

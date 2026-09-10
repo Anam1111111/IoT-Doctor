@@ -1,20 +1,37 @@
 from datetime import datetime
+from uuid import uuid4
 
 
-
-def make_event(level, message, count, port=None, log_file=None, symbol=None, raw=None):
+def make_event(
+    level,
+    message,
+    count="-",
+    port=None,
+    log_file=None,
+    symbol=None,
+    raw=None,
+    device_id=None,
+    transport=None,
+    event_type="log",
+    metadata=None,
+):
     """
-    Builds a normalized event dict. Every transport and parser
-    produces data in this same shape, so the rest of the app
-    (dashboard, session storage) never needs to know where the
-    data came from.
+    Build the normalized event dict used by health, storage, and the UI.
+
+    The legacy fields remain present for the current session format and
+    dashboard while the new fields establish a transport-independent model.
     """
     event = {
+        "id": str(uuid4()),
         "timestamp": datetime.now().strftime("%H:%M:%S"),
+        "device_id": device_id,
+        "transport": transport,
         "level": level,
+        "event_type": event_type,
         "message": message,
         "count": count,
         "symbol": symbol or "❓",
+        "metadata": metadata or {},
     }
     if port:
         event["port"] = port

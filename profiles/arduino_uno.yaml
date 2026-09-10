@@ -1,5 +1,5 @@
 name: "Arduino UNO"
-port: "/dev/cu.usbmodem11301"
+port: "/dev/cu.usbmodem11201"
 baud_rate: 9600
 log_pattern: '\[(\w+)\]\s(.+),\scount=(\d+)'
 level_symbols:
