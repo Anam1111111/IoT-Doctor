@@ -69,13 +69,16 @@
   .fill-WARN { background: var(--warn); }
   .fill-ERROR { background: var(--error); }
 
-  .sparkline-wrap { }
   svg#spark { width: 100%; height: 48px; overflow: visible; }
   .spark-caption { font-family: var(--mono); font-size: 10px; color: var(--dim); margin-top: 6px; }
 
   .meta-row { display: flex; justify-content: space-between; font-size: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); }
   .meta-row .k { color: var(--muted); }
   .meta-row .v { font-family: var(--mono); }
+  .finding { border-bottom: 1px solid var(--border); padding: 8px 0; }
+  .finding-severity { font-family: var(--mono); font-size: 10px; font-weight: 600; }
+  .finding-title { font-size: 12px; margin-top: 3px; }
+  .finding-evidence { color: var(--muted); font-size: 11px; margin-top: 3px; }
 
   /* ---- Toolbar ---- */
   .toolbar {
@@ -120,7 +123,7 @@
 
 <header>
   <div class="brand">
-    <span class="dot"></span>
+    <span class="dot" id="backendStatus" title="Backend connected"></span>
     <div>
       <h1>IoT Debugger</h1>
     </div>
@@ -174,7 +177,9 @@
   <div class="panel-label">DEVICE HEALTH</div>
   <div id="healthStatus" style="font-family: var(--mono); font-size: 20px; font-weight: 600; margin-bottom: 6px;">--</div>
   <div id="healthReason" style="font-size: 12px; color: var(--muted); margin-bottom: 10px;">Waiting for data...</div>
-  <div class="meta-row"><span class="k">Reconnects</span><span class="v" id="reconnectCount">0</span></div>
+  <div class="meta-row"><span class="k">Disconnect incidents</span><span class="v" id="disconnectIncidents">0</span></div>
+  <div class="meta-row"><span class="k">Reconnect attempts</span><span class="v" id="reconnectAttempts">0</span></div>
+  <div id="findings" style="margin-top: 12px;"></div>
 </div>
 
     <div>
@@ -205,16 +210,13 @@
   let replayMode = false;
   const counts = { INFO: 0, WARN: 0, ERROR: 0 };
   let startTime = new Date();
+  let sparklineInterval = null;
+  let sessionTimerInterval = null;
+  let reconnectTimeout = null;
+  let ws = null;
   document.getElementById("startedAt").textContent = startTime.toLocaleTimeString();
 
-  // sparkline: bucket events into 2-second windows
   let buckets = new Array(40).fill(0);
-  let bucketCursor = 0;
-  setInterval(() => {
-    buckets.push(0);
-    buckets.shift();
-    drawSpark();
-  }, 2000);
 
   function drawSpark() {
     const max = Math.max(...buckets, 1);
@@ -226,28 +228,139 @@
     document.getElementById("sparkLine").setAttribute("points", points);
   }
 
-  setInterval(() => {
-    const elapsed = Math.floor((new Date() - startTime) / 1000);
+  function startTimers() {
+    if (sparklineInterval === null) {
+      sparklineInterval = setInterval(() => {
+        buckets.push(0);
+        buckets.shift();
+        drawSpark();
+      }, 2000);
+    }
+    if (sessionTimerInterval === null) {
+      sessionTimerInterval = setInterval(() => {
+        const elapsed = Math.floor((new Date() - startTime) / 1000);
+        const h = String(Math.floor(elapsed / 3600)).padStart(2, "0");
+        const m = String(Math.floor((elapsed % 3600) / 60)).padStart(2, "0");
+        const s = String(elapsed % 60).padStart(2, "0");
+        document.getElementById("sessionTime").textContent = `${h}:${m}:${s}`;
+      }, 1000);
+    }
+  }
+
+  function stopTimers() {
+    if (sparklineInterval !== null) {
+      clearInterval(sparklineInterval);
+      sparklineInterval = null;
+    }
+    if (sessionTimerInterval !== null) {
+      clearInterval(sessionTimerInterval);
+      sessionTimerInterval = null;
+    }
+  }
+
+  function setBackendStatus(connected) {
+    const status = document.getElementById("backendStatus");
+    status.title = connected ? "Backend connected" : "Backend unavailable";
+    status.style.background = connected ? "var(--live)" : "var(--error)";
+    status.style.boxShadow = connected ? "0 0 10px var(--live)" : "0 0 10px var(--error)";
+  }
+
+  function updateHealth(health) {
+    const statusEl = document.getElementById("healthStatus");
+    const reasonEl = document.getElementById("healthReason");
+    statusEl.textContent = health.status;
+    reasonEl.textContent = health.reason;
+    document.getElementById("disconnectIncidents").textContent = health.disconnect_incidents ?? health.reconnect_count ?? 0;
+    document.getElementById("reconnectAttempts").textContent = health.reconnect_attempts ?? 0;
+
+    const colors = { HEALTHY: "#22c55e", RECOVERING: "#f5a623", WARNING: "#f5a623", CRITICAL: "#ef4444" };
+    statusEl.style.color = colors[health.status] || "#e4e7eb";
+    renderFindings(health.findings || []);
+  }
+
+  function resetDisplayState() {
+    allLines = [];
+    counts.INFO = 0;
+    counts.WARN = 0;
+    counts.ERROR = 0;
+    buckets = new Array(40).fill(0);
+    document.getElementById("totalCount").textContent = "0";
+  }
+
+  function applySessionSnapshot(snapshot) {
+    resetDisplayState();
+    const events = snapshot.events || [];
+    allLines = events.slice().reverse();
+    allLines.forEach(event => {
+      if (counts[event.level] !== undefined) counts[event.level]++;
+    });
+    const total = counts.INFO + counts.WARN + counts.ERROR;
+    document.getElementById("totalCount").textContent = total;
+    ["INFO", "WARN", "ERROR"].forEach(level => {
+      document.getElementById("count" + level).textContent = counts[level];
+      const pct = total ? (counts[level] / total) * 100 : 0;
+      document.getElementById("bar" + level).style.width = pct + "%";
+    });
+
+    const session = snapshot.session || {};
+    if (session.started_at) {
+      startTime = new Date(session.started_at);
+      document.getElementById("startedAt").textContent = startTime.toLocaleTimeString();
+      updateSessionTimer();
+    }
+    if (session.filename) document.getElementById("logFile").textContent = session.filename;
+    updateHealth(snapshot.health || {});
+    render();
+    drawSpark();
+  }
+
+  function updateSessionTimer() {
+    const elapsed = Math.max(0, Math.floor((new Date() - startTime) / 1000));
     const h = String(Math.floor(elapsed / 3600)).padStart(2, "0");
     const m = String(Math.floor((elapsed % 3600) / 60)).padStart(2, "0");
     const s = String(elapsed % 60).padStart(2, "0");
     document.getElementById("sessionTime").textContent = `${h}:${m}:${s}`;
-  }, 1000);
+  }
 
-  const ws = new WebSocket("ws://" + window.location.host + "/ws");
+  function connectWebSocket() {
+    ws = new WebSocket("ws://" + window.location.host + "/ws");
 
-  ws.onmessage = function(event) {
+    ws.onopen = function() {
+      setBackendStatus(true);
+      startTimers();
+      reconnectTimeout = null;
+    };
+
+    ws.onclose = function() {
+      setBackendStatus(false);
+      stopTimers();
+      if (reconnectTimeout === null) {
+        reconnectTimeout = setTimeout(() => {
+          reconnectTimeout = null;
+          connectWebSocket();
+        }, 1000);
+      }
+    };
+
+    ws.onerror = function() {
+      setBackendStatus(false);
+    };
+
+    ws.onmessage = handleMessage;
+  }
+
+  function handleMessage(event) {
     const data = JSON.parse(event.data);
+  if (data.type === "session_snapshot") {
+    applySessionSnapshot(data.data || {});
+    return;
+  }
   if (data.type === "health") {
     const h = data.data;
-    const statusEl = document.getElementById("healthStatus");
-    const reasonEl = document.getElementById("healthReason");
-    statusEl.textContent = h.status;
-    reasonEl.textContent = h.reason;
-    document.getElementById("reconnectCount").textContent = h.reconnect_count;
-
-    const colors = { HEALTHY: "#22c55e", WARNING: "#f5a623", CRITICAL: "#ef4444" };
-    statusEl.style.color = colors[h.status] || "#e4e7eb";
+    updateHealth(h);
+    return;
+  }
+  if (data.type === "finding") {
     return;
   }
 
@@ -292,7 +405,28 @@
     if (data.port) document.getElementById("deviceLabel").textContent = data.port + " · 9600 baud";
 
     render();
-  };
+  }
+
+  function renderFindings(findings) {
+    const findingsDiv = document.getElementById("findings");
+    findingsDiv.innerHTML = "";
+    findings.forEach(finding => {
+      const item = document.createElement("div");
+      item.className = "finding";
+      const severity = document.createElement("div");
+      severity.className = "finding-severity";
+      severity.textContent = finding.status || finding.severity;
+      severity.style.color = finding.severity === "CRITICAL" ? "var(--error)" : "var(--warn)";
+      const title = document.createElement("div");
+      title.className = "finding-title";
+      title.textContent = finding.title;
+      const evidence = document.createElement("div");
+      evidence.className = "finding-evidence";
+      evidence.textContent = finding.evidence;
+      item.append(severity, title, evidence);
+      findingsDiv.appendChild(item);
+    });
+  }
 
   function render() {
     const search = searchInput.value.toLowerCase();
@@ -347,6 +481,8 @@ async function startReplay() {
 }
 
 loadSessionList();
+  setBackendStatus(false);
+  connectWebSocket();
 
 </script>
 </body>
