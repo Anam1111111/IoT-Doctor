@@ -1,0 +1,16 @@
+# Python virtual environments
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store
+
+# Local environment / secrets
+.env
+
+# Generated runtime session data
+sessions/

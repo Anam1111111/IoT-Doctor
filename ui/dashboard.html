@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>IoT Debugger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #12151a;
+    --panel-raised: #171b21;
+    --border: #232830;
+    --text: #e4e7eb;
+    --muted: #6b7280;
+    --dim: #3d434d;
+    --info: #4fc3f7;
+    --warn: #f5a623;
+    --error: #ef4444;
+    --live: #22c55e;
+    --sans: "Space Grotesk", sans-serif;
+    --mono: "JetBrains Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: var(--sans);
+  }
+  body { display: flex; flex-direction: column; }
+
+  /* ---- Top bar ---- */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 20px; border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand .dot {
+    width: 9px; height: 9px; border-radius: 50%; background: var(--live);
+    box-shadow: 0 0 10px var(--live);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .brand h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: 0.2px; }
+  .brand .sub { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .session-time { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+  /* ---- Body layout ---- */
+  .body { flex: 1; display: flex; overflow: hidden; }
+
+  /* ---- Side panel ---- */
+  .side {
+    width: 260px; border-right: 1px solid var(--border); background: var(--panel);
+    padding: 18px 16px; display: flex; flex-direction: column; gap: 22px;
+    overflow-y: auto; flex-shrink: 0;
+  }
+  .panel-label {
+    font-size: 11px; color: var(--muted); font-weight: 600;
+    letter-spacing: 0.3px; margin-bottom: 10px;
+  }
+  .big-count { font-family: var(--mono); font-size: 32px; font-weight: 600; line-height: 1; }
+  .big-count-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  .level-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; }
+  .level-row .name { width: 44px; font-family: var(--mono); color: var(--muted); }
+  .level-row .bar-track { flex: 1; height: 6px; background: var(--panel-raised); border-radius: 3px; overflow: hidden; }
+  .level-row .bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
+  .level-row .count { font-family: var(--mono); color: var(--muted); width: 28px; text-align: right; }
+  .fill-INFO { background: var(--info); }
+  .fill-WARN { background: var(--warn); }
+  .fill-ERROR { background: var(--error); }
+
+  .sparkline-wrap { }
+  svg#spark { width: 100%; height: 48px; overflow: visible; }
+  .spark-caption { font-family: var(--mono); font-size: 10px; color: var(--dim); margin-top: 6px; }
+
+  .meta-row { display: flex; justify-content: space-between; font-size: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .meta-row .k { color: var(--muted); }
+  .meta-row .v { font-family: var(--mono); }
+
+  /* ---- Toolbar ---- */
+  .toolbar {
+    display: flex; gap: 8px; align-items: center; padding: 12px 20px;
+    border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  .toolbar input {
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 7px 12px; border-radius: 4px; font-size: 13px; width: 240px;
+    outline: none; font-family: var(--sans);
+  }
+  .toolbar input:focus { border-color: var(--info); }
+  .filter-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--muted);
+    padding: 7px 14px; border-radius: 4px; font-size: 12px; cursor: pointer;
+    font-family: var(--mono); letter-spacing: 0.3px;
+  }
+  .filter-btn.active { color: var(--bg); background: var(--text); border-color: var(--text); }
+  .filter-btn:hover:not(.active) { color: var(--text); border-color: var(--dim); }
+
+  /* ---- Logs ---- */
+  #logs { flex: 1; overflow-y: auto; font-family: var(--mono); font-size: 12.5px; }
+  .line {
+    display: grid; grid-template-columns: 74px 56px 1fr 50px;
+    gap: 14px; padding: 7px 20px; border-bottom: 1px solid #ffffff06;
+    align-items: center;
+  }
+  .line:hover { background: #ffffff05; }
+  .ts { color: var(--dim); }
+  .badge { font-size: 10px; font-weight: 600; padding: 2px 0; text-align: center; border-radius: 3px; }
+  .badge.INFO { color: var(--info); background: #4fc3f71a; }
+  .badge.WARN { color: var(--warn); background: #f5a6231a; }
+  .badge.ERROR { color: var(--error); background: #ef44441a; }
+  .msg { color: var(--text); }
+  .count { color: var(--dim); text-align: right; }
+
+  #logs::-webkit-scrollbar, .side::-webkit-scrollbar { width: 8px; }
+  #logs::-webkit-scrollbar-thumb, .side::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="dot"></span>
+    <div>
+      <h1>IoT Debugger</h1>
+    </div>
+    <span class="sub" id="deviceLabel">/dev/ttys003 · 9600 baud</span>
+  </div>
+  <span class="session-time" id="sessionTime">00:00:00</span>
+
+  <div style="padding: 10px 20px; display:flex; gap:8px; align-items:center; border-bottom:1px solid var(--border); background: var(--panel);">
+  <select id="sessionPicker" style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 6px; border-radius: 4px; font-family: var(--mono); font-size: 12px;"></select>
+  <button class="filter-btn" onclick="startReplay()">▶ Replay</button>
+  <span id="replayStatus" style="font-size: 12px; color: var(--muted);"></span>
+</div>
+
+</header>
+
+<div class="body">
+  <div class="side">
+    <div>
+      <div class="big-count" id="totalCount">0</div>
+      <div class="big-count-label">TOTAL EVENTS</div>
+    </div>
+
+    <div>
+      <div class="panel-label">LEVEL BREAKDOWN</div>
+      <div class="level-row">
+        <span class="name">INFO</span>
+        <div class="bar-track"><div class="bar-fill fill-INFO" id="barINFO" style="width:0%"></div></div>
+        <span class="count" id="countINFO">0</span>
+      </div>
+      <div class="level-row">
+        <span class="name">WARN</span>
+        <div class="bar-track"><div class="bar-fill fill-WARN" id="barWARN" style="width:0%"></div></div>
+        <span class="count" id="countWARN">0</span>
+      </div>
+      <div class="level-row">
+        <span class="name">ERROR</span>
+        <div class="bar-track"><div class="bar-fill fill-ERROR" id="barERROR" style="width:0%"></div></div>
+        <span class="count" id="countERROR">0</span>
+      </div>
+    </div>
+
+    <div class="sparkline-wrap">
+      <div class="panel-label">EVENT RATE</div>
+      <svg id="spark" viewBox="0 0 240 48" preserveAspectRatio="none">
+        <polyline id="sparkLine" fill="none" stroke="#4fc3f7" stroke-width="1.5" points=""/>
+      </svg>
+      <div class="spark-caption">events / 2s window</div>
+    </div>
+
+    <div>
+  <div class="panel-label">DEVICE HEALTH</div>
+  <div id="healthStatus" style="font-family: var(--mono); font-size: 20px; font-weight: 600; margin-bottom: 6px;">--</div>
+  <div id="healthReason" style="font-size: 12px; color: var(--muted); margin-bottom: 10px;">Waiting for data...</div>
+  <div class="meta-row"><span class="k">Reconnects</span><span class="v" id="reconnectCount">0</span></div>
+</div>
+
+    <div>
+      <div class="panel-label">SESSION</div>
+      <div class="meta-row"><span class="k">Started</span><span class="v" id="startedAt">--:--:--</span></div>
+      <div class="meta-row"><span class="k">Log file</span><span class="v" id="logFile">--</span></div>
+    </div>
+  </div>
+
+  <div style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+    <div class="toolbar">
+      <input id="search" placeholder="Search messages..." />
+      <button class="filter-btn active" data-level="ALL">ALL</button>
+      <button class="filter-btn" data-level="INFO">INFO</button>
+      <button class="filter-btn" data-level="WARN">WARN</button>
+      <button class="filter-btn" data-level="ERROR">ERROR</button>
+    </div>
+    <div id="logs"></div>
+  </div>
+</div>
+
+<script>
+  const logsDiv = document.getElementById("logs");
+  const searchInput = document.getElementById("search");
+  const filterBtns = document.querySelectorAll(".filter-btn");
+  let activeLevel = "ALL";
+  let allLines = [];
+  let replayMode = false;
+  const counts = { INFO: 0, WARN: 0, ERROR: 0 };
+  let startTime = new Date();
+  document.getElementById("startedAt").textContent = startTime.toLocaleTimeString();
+
+  // sparkline: bucket events into 2-second windows
+  let buckets = new Array(40).fill(0);
+  let bucketCursor = 0;
+  setInterval(() => {
+    buckets.push(0);
+    buckets.shift();
+    drawSpark();
+  }, 2000);
+
+  function drawSpark() {
+    const max = Math.max(...buckets, 1);
+    const points = buckets.map((v, i) => {
+      const x = (i / (buckets.length - 1)) * 240;
+      const y = 48 - (v / max) * 44 - 2;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(" ");
+    document.getElementById("sparkLine").setAttribute("points", points);
+  }
+
+  setInterval(() => {
+    const elapsed = Math.floor((new Date() - startTime) / 1000);
+    const h = String(Math.floor(elapsed / 3600)).padStart(2, "0");
+    const m = String(Math.floor((elapsed % 3600) / 60)).padStart(2, "0");
+    const s = String(elapsed % 60).padStart(2, "0");
+    document.getElementById("sessionTime").textContent = `${h}:${m}:${s}`;
+  }, 1000);
+
+  const ws = new WebSocket("ws://" + window.location.host + "/ws");
+
+  ws.onmessage = function(event) {
+    const data = JSON.parse(event.data);
+  if (data.type === "health") {
+    const h = data.data;
+    const statusEl = document.getElementById("healthStatus");
+    const reasonEl = document.getElementById("healthReason");
+    statusEl.textContent = h.status;
+    reasonEl.textContent = h.reason;
+    document.getElementById("reconnectCount").textContent = h.reconnect_count;
+
+    const colors = { HEALTHY: "#22c55e", WARNING: "#f5a623", CRITICAL: "#ef4444" };
+    statusEl.style.color = colors[h.status] || "#e4e7eb";
+    return;
+  }
+
+          if (data.type === "replay_start") {
+    replayMode = true;
+    allLines = [];
+    counts.INFO = 0; counts.WARN = 0; counts.ERROR = 0;
+    buckets = new Array(40).fill(0);
+    document.getElementById("replayStatus").textContent = `Replaying ${data.count} events...`;
+    document.querySelector('button[onclick="startReplay()"]').disabled = true;
+    render();
+    return;
+  }
+  if (data.type === "replay_end") {
+    replayMode = false;
+    allLines = [];
+    counts.INFO = 0; counts.WARN = 0; counts.ERROR = 0;
+    buckets = new Array(40).fill(0);
+    document.getElementById("totalCount").textContent = "0";
+    document.getElementById("replayStatus").textContent = "Back to live view.";
+    document.querySelector('button[onclick="startReplay()"]').disabled = false;
+    render();
+    return;
+  }
+
+  if (!data.replay && replayMode) {
+    return; // ignore live events while replay is showing
+  }
+
+    allLines.unshift(data);
+    if (counts[data.level] !== undefined) counts[data.level]++;
+    buckets[buckets.length - 1]++;
+
+    const total = counts.INFO + counts.WARN + counts.ERROR;
+    document.getElementById("totalCount").textContent = total;
+    ["INFO", "WARN", "ERROR"].forEach(lvl => {
+      document.getElementById("count" + lvl).textContent = counts[lvl];
+      const pct = total ? (counts[lvl] / total) * 100 : 0;
+      document.getElementById("bar" + lvl).style.width = pct + "%";
+    });
+    if (data.log_file) document.getElementById("logFile").textContent = data.log_file;
+    if (data.port) document.getElementById("deviceLabel").textContent = data.port + " · 9600 baud";
+
+    render();
+  };
+
+  function render() {
+    const search = searchInput.value.toLowerCase();
+    logsDiv.innerHTML = "";
+    const frag = document.createDocumentFragment();
+    allLines
+      .filter(d => activeLevel === "ALL" || d.level === activeLevel)
+      .filter(d => d.message.toLowerCase().includes(search))
+      .slice(0, 300)
+      .forEach(d => {
+        const line = document.createElement("div");
+        line.className = "line";
+        line.innerHTML = `
+          <span class="ts">${d.timestamp || ""}</span>
+          <span class="badge ${d.level}">${d.level}</span>
+          <span class="msg">${d.message}</span>
+          <span class="count">#${d.count}</span>
+        `;
+        frag.appendChild(line);
+      });
+    logsDiv.appendChild(frag);
+  }
+
+  searchInput.addEventListener("input", render);
+  filterBtns.forEach(btn => {
+    btn.addEventListener("click", () => {
+      filterBtns.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      activeLevel = btn.dataset.level;
+      render();
+    });
+  });
+
+  async function loadSessionList() {
+  const res = await fetch("/sessions");
+  const data = await res.json();
+  const picker = document.getElementById("sessionPicker");
+  picker.innerHTML = "";
+  data.sessions.forEach(name => {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    picker.appendChild(opt);
+  });
+}
+
+async function startReplay() {
+  const filename = document.getElementById("sessionPicker").value;
+  if (!filename) return;
+  document.getElementById("replayStatus").textContent = "Replaying...";
+  await fetch(`/replay/${filename}?speed=5`, { method: "POST" });
+}
+
+loadSessionList();
+
+</script>
+</body>
+</html>
+

@@ -1,0 +1,8 @@
+baud_rate: 9600
+level_symbols:
+  ERROR: "\U0001F534"
+  INFO: "\u26AA"
+  WARN: "\U0001F7E1"
+log_pattern: \[(\w+)\]\s(.+),\scount=(\d+)
+name: Fake Device
+port: /dev/ttys003
