@@ -4,9 +4,11 @@ import re
 import webbrowser
 import sys
 import signal
+import os
 import yaml
 
 processes = []
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def cleanup(signum=None, frame=None):
     print("\nShutting down...")
@@ -35,31 +37,39 @@ device_port, tool_port = ports
 print(f"Device port: {device_port}")
 print(f"Tool port:   {tool_port}")
 
-# Update fake_device.py with the new device port
-with open("fake_device.py", "r") as f:
+# Update tools/fake_device.py with the new device port
+fake_device_path = os.path.join(BASE_DIR, "tools", "fake_device.py")
+with open(fake_device_path, "r") as f:
     content = f.read()
 content = re.sub(r"serial\.Serial\('[^']+'", f"serial.Serial('{device_port}'", content)
-with open("fake_device.py", "w") as f:
+with open(fake_device_path, "w") as f:
     f.write(content)
 
 # Update the yaml profile with the new tool port
-with open("profiles/fake_device.yaml", "r") as f:
+fake_profile_path = os.path.join(BASE_DIR, "profiles", "fake_device.yaml")
+with open(fake_profile_path, "r") as f:
     profile = yaml.safe_load(f)
 profile["port"] = tool_port
-with open("profiles/fake_device.yaml", "w") as f:
+with open(fake_profile_path, "w") as f:
     yaml.dump(profile, f, default_flow_style=False)
 
 print("Ports synced automatically.\n")
 time.sleep(0.5)
 
 print("Starting fake device...")
-fake_device = subprocess.Popen([sys.executable, "fake_device.py"])
+fake_device = subprocess.Popen([sys.executable, fake_device_path], cwd=BASE_DIR)
 processes.append(fake_device)
 
 time.sleep(1)
 
 print("Starting server...")
-server = subprocess.Popen(["uvicorn", "server:app"])
+environment = os.environ.copy()
+environment["IOT_PROFILE"] = "fake_device.yaml"
+server = subprocess.Popen(
+    [sys.executable, "-m", "uvicorn", "core.server:app"],
+    cwd=BASE_DIR,
+    env=environment,
+)
 processes.append(server)
 
 time.sleep(2)

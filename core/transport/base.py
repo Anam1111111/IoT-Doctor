@@ -1,15 +1,19 @@
 class Transport:
     """
-    Any transport (Serial, MQTT, TCP, etc.) must implement these
-    three methods. The core engine only ever calls these — it
-    never needs to know what kind of transport it's talking to.
+    Generic transport boundary for raw device data.
     """
 
     def connect(self):
         raise NotImplementedError
 
-    def read_line(self):
+    def receive(self):
         raise NotImplementedError
 
     def is_connected(self):
+        raise NotImplementedError
+
+    def close(self):
+        raise NotImplementedError
+
+    def metadata(self):
         raise NotImplementedError

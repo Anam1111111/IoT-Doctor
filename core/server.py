@@ -1,15 +1,14 @@
-import yaml
 import asyncio
 import os
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
-from core.health.monitor import HealthMonitor
 
+from core.config.profile_loader import ProfileLoader
+from core.health.monitor import HealthMonitor
+from core.normalization.normalizer import EventNormalizer
 from core.transport.serial_transport import SerialTransport
 from core.parser.regex_parser import RegexParser
-from core.models.event import make_event
 from core.storage.session import SessionStore
-from core.health.monitor import HealthMonitor
 
 app = FastAPI()
 connected_clients = []
@@ -17,14 +16,17 @@ health = HealthMonitor()
 replay_active = False
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+profile_loader = ProfileLoader(BASE_DIR)
+profile = profile_loader.load(os.environ.get("IOT_PROFILE"))
 
-with open(os.path.join(BASE_DIR, "profiles", "arduino_uno.yaml"), "r") as f:
-    profile = yaml.safe_load(f)
-
-symbols = profile["level_symbols"]
 parser = RegexParser(profile["log_pattern"])
 transport = SerialTransport(profile["port"], profile["baud_rate"])
 session = SessionStore(BASE_DIR)
+normalizer = EventNormalizer(
+    device_id=profile.get("device_id", profile.get("name")),
+    level_symbols=profile.get("level_symbols"),
+    log_file=session.basename(),
+)
 
 @app.get("/")
 async def get_dashboard():
@@ -84,28 +86,27 @@ async def read_loop():
             transport.connect()
             print(f"Connected to {profile['port']}")
 
-            connected_event = make_event("INFO", "Device connected", "-",
-                                          port=profile["port"], log_file=session.basename(),
-                                          symbol="🟢")
+            connected_event = normalizer.normalize(
+                {"level": "INFO", "message": "Device connected", "count": "-"},
+                transport_metadata=transport.metadata(),
+                event_type="connection",
+            )
+            connected_event["symbol"] = "🟢"
             await broadcast(connected_event)
             health.update(connected_event)
 
             while True:
-                line = transport.read_line()
-                if not line or replay_active:
-                 await asyncio.sleep(0.01)
-                 continue
+                raw_data = transport.receive()
+                if raw_data is None or raw_data == "" or replay_active:
+                    await asyncio.sleep(0.01)
+                    continue
 
-                parsed = parser.parse(line)
-                if parsed:
-                    level, message, count = parsed
-                    symbol = symbols.get(level, "❓")
-                else:
-                    level, message, count = "?", line, "?"
-                    symbol = "❓"
-
-                event = make_event(level, message, count, port=profile["port"], symbol=symbol,
-                                    raw=line, log_file=session.basename())
+                parsed = parser.parse(raw_data)
+                event = normalizer.normalize(
+                    parsed,
+                    raw=raw_data,
+                    transport_metadata=transport.metadata(),
+                )
                 session.save(event)
                 health.update(event)
                 await broadcast(event)
@@ -115,7 +116,13 @@ async def read_loop():
         except Exception as e:
             print(f"Error in read loop: {e}")
             print("Retrying in 2s...")
-            disconnected_event = make_event("ERROR", "Device disconnected — retrying...", "-", symbol="🔴")
+            transport.close()
+            disconnected_event = normalizer.normalize(
+                {"level": "ERROR", "message": "Device disconnected - retrying...", "count": "-"},
+                transport_metadata=transport.metadata(),
+                event_type="connection",
+            )
+            disconnected_event["symbol"] = "🔴"
             await broadcast(disconnected_event)
             await broadcast({"type": "health", "data": health.status()})
             health.update(disconnected_event)
@@ -123,6 +130,11 @@ async def read_loop():
 
 @app.on_event("startup")
 async def startup_event():
-    session_event = make_event("INFO", "Session started", "-", log_file=session.basename(), symbol="🟢")
+    session_event = normalizer.normalize(
+        {"level": "INFO", "message": "Session started", "count": "-"},
+        transport_metadata=transport.metadata(),
+        event_type="session",
+    )
+    session_event["symbol"] = "🟢"
     await broadcast(session_event)
     asyncio.create_task(read_loop())
