@@ -3,6 +3,7 @@ annotated-types==0.8.0
 anyio==4.14.2
 click==8.5.0
 fastapi==0.141.1
+python-multipart==0.0.20
 h11==0.16.0
 idna==3.19
 pydantic==2.13.5

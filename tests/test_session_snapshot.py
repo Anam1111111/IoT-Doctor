@@ -95,6 +95,14 @@ class SessionSnapshotTests(unittest.TestCase):
         )
         self.assertEqual(first["data"]["events"], second["data"]["events"])
 
+    def test_back_to_live_endpoint_returns_current_session_snapshot(self):
+        snapshot = asyncio.run(server.current_session_snapshot())
+        self.assertEqual(snapshot["type"], "session_snapshot")
+        self.assertEqual(
+            snapshot["data"]["session"]["filename"],
+            "session_2026-09-10_15-51-43.log",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

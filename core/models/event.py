@@ -26,7 +26,7 @@ def make_event(
         "timestamp": datetime.now().strftime("%H:%M:%S"),
         "device_id": device_id,
         "transport": transport,
-        "level": level,
+        "level": level if level is not None else "UNKNOWN",
         "event_type": event_type,
         "message": message,
         "count": count,

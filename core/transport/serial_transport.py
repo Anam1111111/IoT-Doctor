@@ -1,5 +1,7 @@
 import serial
 from core.transport.base import Transport
+import logging
+import os
 
 class SerialTransport(Transport):
     def __init__(self, port, baud_rate, timeout=1.0):
@@ -26,7 +28,19 @@ class SerialTransport(Transport):
 
         newline_index = self._buffer.find(b"\n")
         if newline_index >= 0:
-            return self._pop_line(newline_index)
+            line = self._pop_line(newline_index)
+            # Forensic debug logging (enabled via FORENSIC=1)
+            try:
+                if os.environ.get("FORENSIC") == "1":
+                    logging.getLogger("forensic").debug(
+                        "RAW:%r | BUFFER_AFTER_APPEND:%r | EXTRACTED:%r",
+                        bytes(line, "utf-8", errors="ignore") if isinstance(line, str) else line,
+                        bytes(self._buffer),
+                        line,
+                    )
+            except Exception:
+                pass
+            return line
 
         available = getattr(self.connection, "in_waiting", 0)
         chunk = self.connection.read(available or 1)
@@ -39,7 +53,18 @@ class SerialTransport(Transport):
         newline_index = self._buffer.find(b"\n")
         if newline_index < 0:
             return None
-        return self._pop_line(newline_index)
+        line = self._pop_line(newline_index)
+        try:
+            if os.environ.get("FORENSIC") == "1":
+                logging.getLogger("forensic").debug(
+                    "RAW:%r | BUFFER_AFTER_APPEND:%r | EXTRACTED:%r",
+                    chunk,
+                    bytes(self._buffer),
+                    line,
+                )
+        except Exception:
+            pass
+        return line
 
     def _pop_line(self, newline_index):
         line = bytes(self._buffer[:newline_index])

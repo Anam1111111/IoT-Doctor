@@ -139,7 +139,7 @@ class _ConnectionInstabilityRule(_Rule):
 class DiagnosticEngine:
     """Evaluate normalized events and metrics into lifecycle-aware findings."""
 
-    def __init__(self, event_window=20, metric_window=30, recovery_events=5, rules=None):
+    def __init__(self, event_window=20, metric_window=30, recovery_events=5, rules=None, historical_mode=False):
         self.event_window = event_window
         self.metric_window = metric_window
         self.recovery_events = recovery_events
@@ -149,6 +149,7 @@ class DiagnosticEngine:
         self._historical_findings = []
         self._connection_recovery_count = 0
         self._reboot_sequence_active = False
+        self.historical_mode = historical_mode
         self.rules = rules or [
             _UnexpectedRebootRule(minimum_previous_uptime=10, startup_uptime=2),
             _MemoryDegradationRule(),
@@ -182,12 +183,21 @@ class DiagnosticEngine:
                 if rule.key == "unexpected_reboot":
                     if self._reboot_sequence_active:
                         continue
-                    finding.status = "RESOLVED"
-                    finding.resolved_at = self._now()
-                    finding.resolution_reason = "Reboot incident recorded"
-                    self._historical_findings.append(finding)
-                    new_findings.append(finding)
-                    self._reboot_sequence_active = True
+                    if self.historical_mode:
+                        # In historical analysis, present reboots as INCIDENTs
+                        finding.status = "INCIDENT"
+                        self._historical_findings.append(finding)
+                        new_findings.append(finding)
+                        self._reboot_sequence_active = True
+                    else:
+                        # In live mode, treat reboot detection as a recorded
+                        # historical event that is immediately marked resolved
+                        finding.status = "RESOLVED"
+                        finding.resolved_at = self._now()
+                        finding.resolution_reason = "Reboot incident recorded"
+                        self._historical_findings.append(finding)
+                        new_findings.append(finding)
+                        self._reboot_sequence_active = True
                     continue
                 existing = self._active_findings.get(rule.key)
                 if existing is None:
@@ -210,15 +220,55 @@ class DiagnosticEngine:
         return self.historical_findings() + self.active_findings()
 
     def _record_connection_disconnect(self):
-        finding = self._active_findings.get("connection_instability")
+        # Decide whether this disconnect should be recorded as a one-off
+        # historical interruption or an active instability condition.
         disconnect_count = self._disconnect_count()
         evidence = self._disconnect_evidence(disconnect_count)
-        if finding is not None:
-            finding.status = "ACTIVE"
-            finding.resolved_at = None
-            finding.resolution_reason = None
-            finding.evidence = evidence
+        # Find configured instability threshold
+        instability_rule = next((r for r in self.rules if r.key == "connection_instability"), None)
+        threshold = getattr(instability_rule, "threshold", None)
+
+        # If we already have an active instability finding, update it
+        existing = self._active_findings.get("connection_instability")
+        if existing is not None:
+            existing.status = "ACTIVE"
+            existing.resolved_at = None
+            existing.resolution_reason = None
+            existing.evidence = evidence
             return None
+
+        # Historical mode: record a discrete interruption incident unless the
+        # configured threshold is met, in which case create an active instability
+        # finding. Live (non-historical) mode should create an active instability
+        # finding on disconnect.
+        if self.historical_mode:
+            if threshold is None or disconnect_count < threshold:
+                incident = Finding(
+                    severity="WARNING",
+                    title="Connection interruption detected",
+                    category="connectivity",
+                    description="A discrete connection interruption was observed during the session.",
+                    evidence=evidence,
+                    confidence=1.0,
+                    recommended_action="Verify the device connection and monitor for additional disconnects.",
+                )
+                incident.status = "INCIDENT"
+                self._historical_findings.append(incident)
+                return incident
+
+            finding = Finding(
+                severity="CRITICAL",
+                title="Connection instability detected",
+                category="connectivity",
+                description="The device disconnected and requires stable telemetry to recover.",
+                evidence=evidence,
+                confidence=1.0,
+                recommended_action="Inspect the serial connection, power stability, and device reset indicators.",
+            )
+            self._active_findings["connection_instability"] = finding
+            return finding
+
+        # Live mode: create active instability immediately as before
         finding = Finding(
             severity="CRITICAL",
             title="Connection instability detected",

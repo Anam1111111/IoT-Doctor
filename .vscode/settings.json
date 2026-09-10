@@ -1,0 +1,18 @@
+{
+  "files.exclude": {
+    "**/venv": true,
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/.git": true
+  },
+
+  "search.exclude": {
+    "**/venv/**": true,
+    "**/__pycache__/**": true,
+    "**/.pytest_cache/**": true,
+    "**/sessions/**": true,
+    "**/.git/**": true,
+    "**/*.log": true,
+    "**/*.pyc": true
+  }
+}
