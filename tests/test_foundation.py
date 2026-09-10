@@ -2,6 +2,8 @@ import unittest
 
 from core.config.profile_loader import ProfileLoader
 from core.health.monitor import HealthMonitor
+from core.diagnostics import DiagnosticEngine
+from core.models.metric import Metric
 from core.normalization.normalizer import EventNormalizer
 from core.parser.regex_parser import RegexParser
 from core.transport.serial_transport import SerialTransport
@@ -12,7 +14,10 @@ class FoundationTests(unittest.TestCase):
         monitor = HealthMonitor()
         monitor.update({"level": "INFO", "message": "Device connected"})
         for _ in range(10):
-            monitor.update({"level": "INFO", "message": "FreeRAM=1778b"})
+            monitor.update(
+                {"level": "INFO", "message": "FreeRAM=1778b"},
+                metrics=[Metric("free_memory", 1778, "bytes")],
+            )
 
         self.assertNotEqual(
             monitor.status()["reason"],
@@ -21,14 +26,22 @@ class FoundationTests(unittest.TestCase):
 
     def test_strictly_decreasing_ram_values_trigger_memory_degradation(self):
         monitor = HealthMonitor()
+        diagnostics = DiagnosticEngine()
         monitor.update({"level": "INFO", "message": "Device connected"})
         for ram in (1778, 1770, 1760, 1750, 1740, 1730, 1720, 1710, 1700, 1690):
-            monitor.update({"level": "INFO", "message": f"FreeRAM={ram}b"})
+            event = {"level": "INFO", "message": f"FreeRAM={ram}b"}
+            metric = Metric("free_memory", ram, "bytes")
+            diagnostics.process(event, [metric])
+            monitor.update(
+                event,
+                metrics=[metric],
+                findings=diagnostics.active_findings(),
+            )
 
         self.assertEqual(monitor.status()["status"], "WARNING")
         self.assertEqual(
             monitor.status()["reason"],
-            "Free RAM decreasing continuously — possible memory leak",
+            "Possible memory degradation",
         )
 
     def test_regex_parser_returns_structured_data(self):

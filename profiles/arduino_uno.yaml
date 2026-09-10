@@ -6,3 +6,12 @@ level_symbols:
   INFO: "⚪"
   WARN: "🟡"
   ERROR: "🔴"
+metrics:
+  uptime:
+    source: message
+    pattern: 'Uptime=(?P<value>\d+)s'
+    unit: seconds
+  free_memory:
+    source: message
+    pattern: 'FreeRAM=(?P<value>\d+)b'
+    unit: bytes
