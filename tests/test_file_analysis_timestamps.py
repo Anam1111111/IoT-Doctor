@@ -28,7 +28,7 @@ def test_supported_timestamp_formats_and_raw_preservation():
     # Four structured timestamped lines expected
     assert result["statistics"]["events_parsed"] == 4
     assert result["statistics"]["unrecognized_lines"] == 1
-    # raw_lines should preserve the exact original lines
-    assert result["raw_lines"][4] == "this line is unstructured and should be preserved as raw"
+    # raw_lines preserve the exact original source, including the line ending.
+    assert result["raw_lines"][4] == "this line is unstructured and should be preserved as raw\n"
     # ensure parsed events include timestamps and messages
     assert any(e.get("timestamp") and "timeout" in (e.get("message") or "") for e in result["events"]) or any("timeout" in (r or "") for r in result["raw_lines"]) 

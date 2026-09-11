@@ -44,7 +44,7 @@ class FileAnalysisService:
         for raw_line in FileReader(path, self.max_bytes).lines():
             lines_total += 1
             line = raw_line.rstrip("\r\n")
-            raw_lines.append(line)
+            raw_lines.append(raw_line)
             if not line:
                 continue
             parsed = None
@@ -135,6 +135,19 @@ class FileAnalysisService:
             health.connection_state = "CONNECTED"
 
         health_data = health.status()
+        has_disconnect_evidence = any(
+            "disconnected" in (event.get("message") or "").lower()
+            for event in events
+        )
+        if (
+            parsed_lines > 0
+            and health_data["status"] == "CRITICAL"
+            and not health_data["connected"]
+            and not has_disconnect_evidence
+        ):
+            health_data["status"] = "UNKNOWN"
+            health_data["reason"] = "Insufficient connection evidence in imported log"
+            health_data["connection_state"] = "UNKNOWN"
         # If we parsed zero structured events, mark overall health UNKNOWN
         if parsed_lines == 0:
             health_data["status"] = "UNKNOWN"
@@ -161,6 +174,7 @@ class FileAnalysisService:
             except Exception:
                 return None
 
+        used_blocks_by_category = {}
         for f in hist:
             # Choose keywords by category
             if f.category == "connectivity":
@@ -179,14 +193,23 @@ class FileAnalysisService:
                 if any(k in msg for k in keywords):
                     candidate_indices.append(idx)
 
-            # Group contiguous candidate indices into correlation blocks
+            # Group locally related events. When timestamps are present, allow
+            # intervening telemetry only inside a short, deterministic window.
             blocks = []
             block = []
             for i in candidate_indices:
                 if not block:
                     block = [i]
                     continue
-                if i == block[-1] + 1:
+                previous = block[-1]
+                previous_ts = _parse_ts(events[previous].get("timestamp"))
+                current_ts = _parse_ts(events[i].get("timestamp"))
+                close_in_time = (
+                    previous_ts is not None
+                    and current_ts is not None
+                    and 0 <= (current_ts - previous_ts).total_seconds() <= 60
+                )
+                if i == previous + 1 or close_in_time:
                     block.append(i)
                 else:
                     blocks.append(block)
@@ -194,10 +217,9 @@ class FileAnalysisService:
             if block:
                 blocks.append(block)
 
-            # Prefer the largest block that likely corresponds to the finding
-            chosen_block = blocks[0] if blocks else []
-            if blocks:
-                chosen_block = max(blocks, key=lambda b: len(b))
+            block_index = used_blocks_by_category.get(f.category, 0)
+            chosen_block = blocks[block_index] if block_index < len(blocks) else []
+            used_blocks_by_category[f.category] = block_index + 1
 
             related = [events[i] for i in chosen_block]
 
@@ -253,6 +275,74 @@ class FileAnalysisService:
                     "duration": duration,
                     "related_events": related,
                     "impact": impact,
+                }
+            )
+
+        # A timeout becomes an incident only when the file contains explicit
+        # later recovery evidence; isolated timeout events remain notable events.
+        recovery_terms = (
+            "acknowledgement received",
+            "acknowledgment received",
+            "retry succeeded",
+            "recovered",
+            "verification passed",
+            "provisioning completed",
+            "completed successfully",
+        )
+        timeout_starts = set()
+        for start_index, event in enumerate(events):
+            message = (event.get("message") or "").lower()
+            if "timeout" not in message or start_index in timeout_starts:
+                continue
+
+            recovery_index = None
+            start_ts = _parse_ts(event.get("timestamp"))
+            for candidate_index in range(start_index + 1, len(events)):
+                candidate = events[candidate_index]
+                candidate_msg = (candidate.get("message") or "").lower()
+                if "timeout" in candidate_msg:
+                    break
+                candidate_ts = _parse_ts(candidate.get("timestamp"))
+                if (
+                    start_ts is not None
+                    and candidate_ts is not None
+                    and (candidate_ts - start_ts).total_seconds() > 60
+                ):
+                    break
+                if any(term in candidate_msg for term in recovery_terms):
+                    recovery_index = candidate_index
+                    break
+
+            if recovery_index is None:
+                continue
+
+            timeout_starts.add(start_index)
+            related = events[start_index : recovery_index + 1]
+            start_time = related[0].get("timestamp")
+            end_time = related[-1].get("timestamp")
+            start_dt = _parse_ts(start_time)
+            end_dt = _parse_ts(end_time)
+            duration = (
+                (end_dt - start_dt).total_seconds()
+                if start_dt is not None and end_dt is not None
+                else None
+            )
+            incidents.append(
+                {
+                    "id": None,
+                    "category": "timeout",
+                    "title": "Command acknowledgement timeout recovered",
+                    "severity": "WARNING",
+                    "evidence": (
+                        f"Timeout observed: {related[0].get('message')}. "
+                        f"Recovery observed: {related[-1].get('message')}."
+                    ),
+                    "status": "RESOLVED",
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "duration": duration,
+                    "related_events": related,
+                    "impact": {"recovered": True},
                 }
             )
 

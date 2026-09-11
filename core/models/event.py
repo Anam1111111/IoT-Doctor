@@ -15,6 +15,7 @@ def make_event(
     event_type="log",
     metadata=None,
     category=None,
+    source=None,
 ):
     """
     Build the normalized event dict used by health, storage, and the UI.
@@ -44,6 +45,8 @@ def make_event(
         "symbol": symbol or "❓",
         "metadata": metadata or {},
     }
+    if source:
+        event["source"] = source
     if port:
         event["port"] = port
     if log_file:

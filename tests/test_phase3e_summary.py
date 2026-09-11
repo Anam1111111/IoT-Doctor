@@ -24,7 +24,10 @@ def test_transient_warning_error_produces_summary(tmp_path, monkeypatch):
     ]
     # run
     res = _run_analysis(lines)
-    assert res.get("incidents") == []
+    timeout_incident = next(
+        item for item in res.get("incidents", []) if item.get("category") == "timeout"
+    )
+    assert timeout_incident["status"] == "RESOLVED"
     assert res.get("analysis_summary") is not None
     assert "notable" in res.get("analysis_summary") or "Final health" in res.get("analysis_summary")
 
@@ -44,7 +47,7 @@ def test_absence_of_connection_evidence_marks_unknown(tmp_path):
         "Some unstructured line without timestamps",
     ]
     res = _run_analysis(lines)
-    # If parsed events exist but no positive connection evidence, connected should not be True
+    # Parsed data without connection or disconnect evidence is insufficient.
     assert res.get("health", {}).get("connected") in (False, None)
-    # If few structured events parsed, status may be UNKNOWN or HEALTHY depending on heuristics
-    assert "analysis_summary" in res
+    assert res.get("health", {}).get("status") == "UNKNOWN"
+    assert "Insufficient connection evidence" in res.get("health", {}).get("reason", "")

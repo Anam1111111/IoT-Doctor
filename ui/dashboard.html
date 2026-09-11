@@ -520,7 +520,7 @@
 
   .analysis-card {
     width: min(1100px, 96%);
-    max-height: 90%;
+    height: min(860px, 90vh);
     overflow: hidden;
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -538,54 +538,99 @@
     justify-content: space-between;
     gap: 12px;
   }
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 16px;
+    font: 600 12px var(--mono);
+  }
+  .status-badge.green { background: rgba(34,197,94,0.12); color: var(--live); }
+  .status-badge.blue { background: rgba(79,195,247,0.06); color: var(--info); }
+  .status-badge.amber { background: rgba(245,166,35,0.06); color: var(--warn); }
+  .status-badge.red { background: rgba(239,68,68,0.06); color: var(--error); }
+  .status-badge.gray { background: rgba(255,255,255,0.02); color: var(--muted); }
+  /* Findings and incidents */
+  .finding-item { background: rgba(255,255,255,0.015); border: 1px solid rgba(255,255,255,0.03); }
+  .finding-item .finding-title { font-weight:700; color: var(--text); }
+  .finding-item .finding-evidence { color: var(--muted); }
+  .finding-item.recovered { border-left: 4px solid var(--live); }
+  .finding-item.warn { border-left: 4px solid var(--warn); }
+  .finding-item.critical { border-left: 4px solid var(--error); }
+  .recovery-badge { display:inline-block; padding:3px 8px; border-radius:12px; font:600 11px var(--mono); color:var(--live); background: rgba(34,197,94,0.08); margin-left:8px; }
+  .recommended-action { margin-top:6px; padding:8px; border-radius:6px; background: rgba(79,195,247,0.03); border: 1px solid rgba(79,195,247,0.04); color: var(--info); font-weight:600; }
+  /* Key event highlighting */
+  .analysis-key-event { padding:6px 8px; border-radius:6px; background: rgba(245,166,35,0.03); border:1px solid rgba(245,166,35,0.04); color: var(--text); font: 12px var(--mono); }
+  .analysis-key-event.error { background: rgba(239,68,68,0.04); border-color: rgba(239,68,68,0.06); }
+  .analysis-key-event.info { background: rgba(79,195,247,0.02); border-color: rgba(79,195,247,0.04); color: var(--info); }
+  .analysis-key-event.warn { background: rgba(245,166,35,0.03); border-color: rgba(245,166,35,0.05); color: var(--warn); }
+  /* Slight contrast improvement for important fields and keep header visible */
+  .analysis-header {
+    box-shadow: inset 0 -1px 0 rgba(255,255,255,0.02);
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    background: var(--panel);
+  }
 
+  /* Constrain the modal and make its content, rather than the page, scroll. */
   .analysis-body {
     display: flex;
     gap: 18px;
-    padding: 18px;
+    padding: 12px 18px 18px 18px;
     overflow: hidden;
     flex: 1;
+    min-height: 0;
   }
-
   .analysis-left {
-    width: 420px;
-    flex: 0 0 420px;
-    overflow-y: auto;
+    width: 40%;
+    flex: 0 0 40%;
+    min-width: 300px;
+    padding-right: 16px;
     border-right: 1px solid var(--border);
-    padding-right: 12px;
+    overflow-y: auto;
   }
-
   .analysis-right {
     flex: 1;
+    min-width: 0;
+    padding-left: 2px;
     overflow-y: auto;
-    padding-left: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
   }
-
   .analysis-section {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .analysis-section:first-child { padding-top: 4px; }
+  .analysis-section:last-child { border-bottom: 0; }
+  .raw-log {
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font: 12px/1.5 var(--mono);
+  }
+  .timeline-item {
+    display: grid;
+    grid-template-columns: 180px minmax(0, 1fr);
+    gap: 10px;
     padding: 8px 0;
     border-bottom: 1px solid #ffffff06;
+    font: 12px/1.4 var(--mono);
   }
+  .timeline-item > div:first-child { color: var(--muted); }
+  #analysisKeyEvents { display: flex; flex-direction: column; gap: 7px; }
+  #analysisTimeline { max-height: 330px; overflow-y: auto; }
+  #analysisRecommendation { color: var(--info); }
+  .analysis-section .panel-label { color: #9aa3b2; }
+  .collapsible { cursor: pointer; user-select: none; }
+  .small-inline { font: 12px var(--mono); color: var(--muted); }
 
-  .raw-log {
-    white-space: pre-wrap;
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--muted);
-    background: var(--panel-raised);
-    padding: 12px;
-    border-radius: 6px;
-    overflow: auto;
-    max-height: 280px;
-  }
-
-  .timeline-item {
-    padding: 8px 0;
-    border-bottom: 1px dashed #ffffff06;
-  }
-
+ 
   .finding-item {
     padding: 8px;
     border-radius: 6px;
@@ -926,9 +971,10 @@
       <div>
         <div style="font:700 14px var(--mono);">LOG ANALYSIS</div>
         <div id="analysisFilename" style="font:600 12px var(--mono); color:var(--muted);">-</div>
+        <div id="analysisSummaryShort" class="small-inline" style="margin-top:6px;"></div>
       </div>
-      <div>
-        <span id="analysisBadge" style="display:inline-block;margin-right:8px;color:var(--muted);"></span>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div id="analysisBadge" class="status-badge gray" style="margin-right:6px;">UNKNOWN</div>
         <button class="btn" id="closeAnalysisBtn">Close</button>
       </div>
     </div>
@@ -939,14 +985,25 @@
           <div id="analysisExecutive" style="font:600 14px var(--mono); margin-bottom:8px;"></div>
         </div>
         <div class="analysis-section">
-          <div class="panel-label">OVERVIEW</div>
+          <div class="panel-label">HEALTH / ASSESSMENT</div>
           <div style="font:600 16px var(--mono);" id="overviewHealth">HEALTH: UNKNOWN</div>
           <div id="overviewStats" style="margin-top:10px; color:var(--muted); font:12px var(--mono);"></div>
         </div>
 
         <div class="analysis-section">
-          <div class="panel-label">FINDINGS</div>
+          <div class="panel-label">FINDINGS / INCIDENTS</div>
           <div id="analysisFindings"></div>
+          <div id="analysisNoIncidents" class="small-inline" style="margin-top:6px; display:none;">No incidents detected.</div>
+        </div>
+
+        <div class="analysis-section">
+          <div class="panel-label">KEY EVENTS</div>
+          <div id="analysisKeyEvents"></div>
+        </div>
+
+        <div class="analysis-section">
+          <div class="panel-label">RECOMMENDED ACTION</div>
+          <div id="analysisRecommendation" class="small-inline recommended-action"></div>
         </div>
       </div>
 
@@ -957,17 +1014,14 @@
         </div>
 
         <div class="analysis-section">
-          <div class="panel-label">SUMMARY</div>
-          <div id="analysisExplanation" style="color:var(--muted); font:12px var(--mono);"></div>
-        </div>
-
-        <div class="analysis-section">
           <div class="panel-label">UNRECOGNIZED LINES</div>
           <div id="analysisUnrecognized" style="color:var(--muted); font:12px var(--mono);"></div>
+          <div id="analysisUnrecognizedList" class="raw-log" style="display:none; margin-top:8px; max-height:140px;"></div>
+          <div style="margin-top:6px;"><a id="toggleUnrec" class="collapsible small-inline">Show unrecognized lines</a></div>
         </div>
 
         <div class="analysis-section">
-          <div class="panel-label">RAW LOG</div>
+          <div class="panel-label">RAW LOG / ORIGINAL SOURCE</div>
           <div id="analysisRaw" class="raw-log"></div>
         </div>
       </div>
@@ -2317,106 +2371,137 @@
 
     document.getElementById("overviewHealth").textContent =
       `HEALTH: ${health.status || "UNKNOWN"}`;
+    document.getElementById("overviewHealth").style.color =
+      health.status === "HEALTHY"
+        ? "var(--live)"
+        : health.status === "CRITICAL"
+          ? "var(--error)"
+          : health.status === "WARNING" || health.status === "RECOVERING"
+            ? "var(--warn)"
+            : "var(--muted)";
 
     document.getElementById("overviewStats").innerHTML =
       `${stats.lines_total ?? 0} lines &nbsp;&nbsp; ${stats.events_parsed ?? 0} parsed &nbsp;&nbsp; ${stats.unrecognized_lines ?? 0} unrecognized &nbsp;&nbsp; ${(result?.findings || []).length} findings`;
     document.getElementById("overviewStats").innerHTML =
       `${stats.lines_total ?? 0} lines &nbsp;&nbsp; ${stats.events_parsed ?? 0} parsed &nbsp;&nbsp; ${stats.unrecognized_lines ?? 0} unrecognized &nbsp;&nbsp; ${(result?.findings || []).length} findings`;
 
-    // Findings
+    // Findings / Incidents
     const findingsDiv = document.getElementById("analysisFindings");
     findingsDiv.innerHTML = "";
-    // Incidents (prepend to findings)
-    (result?.incidents || []).forEach(i => {
-      const item = document.createElement('div');
-      item.className = 'finding-item';
-      const sev = document.createElement('div'); sev.style.font = '700 12px var(--mono)'; sev.textContent = (i.severity ? (i.severity + ' ') : '') + (i.title || 'Incident');
-      const expl = document.createElement('div'); expl.style.color = 'var(--muted)'; expl.style.font = '12px var(--mono)'; expl.textContent = i.evidence || '';
-      item.appendChild(sev);
-      if (expl.textContent) item.appendChild(expl);
-      findingsDiv.appendChild(item);
-    });
-    (result?.findings || []).forEach(f => {
-      const item = document.createElement('div');
-      item.className = 'finding-item';
-      const sev = document.createElement('div');
-      sev.style.font = '700 12px var(--mono)';
-      sev.textContent = (f.severity ? (f.severity + ' ') : '') + (f.title || 'Finding');
-      const expl = document.createElement('div');
-      expl.style.color = 'var(--muted)';
-      expl.style.font = '12px var(--mono)';
-      expl.textContent = f.description || f.explanation || '';
-      const evidence = document.createElement('div');
-      evidence.style.marginTop = '6px';
-      evidence.style.color = 'var(--muted)';
-      evidence.style.font = '12px var(--mono)';
-      evidence.textContent = f.evidence || f.details || '';
-      item.appendChild(sev);
-      if (expl.textContent) item.appendChild(expl);
-      if (evidence.textContent) {
-        const evLabel = document.createElement('div'); evLabel.style.font = '600 11px var(--mono)'; evLabel.textContent = 'Evidence:'; item.appendChild(evLabel);
-        item.appendChild(evidence);
-      }
-      if (f.recommended_action) {
-        const actionLabel = document.createElement('div'); actionLabel.style.font = '600 11px var(--mono)'; actionLabel.textContent = 'Recommended action:'; item.appendChild(actionLabel);
-        const action = document.createElement('div'); action.style.color = 'var(--muted)'; action.style.font = '12px var(--mono)'; action.textContent = f.recommended_action; item.appendChild(action);
-      }
-      findingsDiv.appendChild(item);
-    });
+    const incidents = result?.report?.length ? result.report : (result?.incidents || []);
+    if (!incidents || incidents.length === 0) {
+      document.getElementById('analysisNoIncidents').style.display = 'block';
+    } else {
+      document.getElementById('analysisNoIncidents').style.display = 'none';
+      incidents.forEach(i => {
+        const item = document.createElement('div');
+        item.className = 'finding-item';
+        const title = document.createElement('div'); title.style.font = '700 12px var(--mono)'; title.textContent = i.title || i.category || 'Incident';
+        const severity = (i.severity || '').toUpperCase();
+        if (severity === 'CRITICAL') item.style.borderLeft = '4px solid var(--error)';
+        else if (severity === 'WARNING' || severity === 'WARN') item.style.borderLeft = '4px solid var(--warn)';
+        else item.style.borderLeft = '4px solid rgba(255,255,255,0.03)';
+        const expl = document.createElement('div'); expl.style.color = 'var(--muted)'; expl.style.font = '12px var(--mono)'; expl.textContent = i.what_happened || i.title || '';
+        const evidence = document.createElement('div'); evidence.style.marginTop = '6px'; evidence.style.color = 'var(--muted)'; evidence.style.font = '12px var(--mono)'; evidence.textContent = (i.evidence && i.evidence.join) ? i.evidence.join('; ') : (i.evidence || '');
+        const rec = document.createElement('div'); rec.className = 'small-inline'; rec.style.marginTop='6px'; rec.textContent = i.recovered ? 'Recovered' : (i.status || ''); rec.style.color = i.recovered ? 'var(--live)' : 'var(--muted)';
+        const action = document.createElement('div'); action.className='small-inline'; action.style.marginTop='6px'; action.textContent = i.recommended_action || '';
+        item.appendChild(title);
+        if (expl.textContent) item.appendChild(expl);
+        if (evidence.textContent) { const evLabel = document.createElement('div'); evLabel.style.font = '600 11px var(--mono)'; evLabel.textContent = 'Evidence:'; item.appendChild(evLabel); item.appendChild(evidence); }
+        if (action.textContent) { const actLabel = document.createElement('div'); actLabel.style.font='600 11px var(--mono)'; actLabel.textContent='Recommended action:'; item.appendChild(actLabel); item.appendChild(action); }
+        item.appendChild(rec);
+        findingsDiv.appendChild(item);
+      });
+    }
 
-    // Timeline
+    // Timeline (chronological) and Key Events
     const timeline = document.getElementById('analysisTimeline');
     timeline.innerHTML = '';
-    (result?.events || []).slice().forEach(ev => {
-      const row = document.createElement('div');
-      row.className = 'timeline-item';
+    const keyHost = document.getElementById('analysisKeyEvents'); keyHost.innerHTML = '';
+    const evs = (result?.events || []).slice().filter(e=>e.timestamp).sort((a,b)=> new Date(a.timestamp) - new Date(b.timestamp));
+    evs.forEach(ev => {
+      const row = document.createElement('div'); row.className = 'timeline-item';
       const ts = document.createElement('div'); ts.style.font = '600 12px var(--mono)'; ts.style.color = 'var(--dim)'; ts.textContent = ev.timestamp || '';
       const line = document.createElement('div'); line.style.marginTop = '4px'; line.textContent = `${ev.level || 'INFO'}  ${ev.message || ''}`;
       row.appendChild(ts); row.appendChild(line);
       timeline.appendChild(row);
+      const L = (ev.level||'').toUpperCase();
+      const keyTerms = /timeout|disconnect|reconnect|reboot|restart|reset|recover|complet|verif/;
+      if (['WARN','WARNING','ERROR','CRITICAL'].includes(L) || keyTerms.test(ev.message || '')) {
+        const k = document.createElement('div'); k.className='analysis-key-event';
+        if (L.startsWith('ERROR') || L === 'CRITICAL') k.classList.add('error');
+        else if (L.startsWith('WARN')) k.classList.add('warn');
+        else k.classList.add('info');
+        k.textContent = `${ev.timestamp} ${L} ${ev.message}`;
+        keyHost.appendChild(k);
+      }
     });
 
-    // Unrecognized lines
+    // Unrecognized lines and toggle
     const unrec = document.getElementById('analysisUnrecognized');
     unrec.innerHTML = '';
-    if (result?.statistics?.unrecognized_lines && result.raw_lines) {
-      const lines = result.raw_lines.filter((_, i) => {
-        // crude: assume parsed events count correspond to first N lines; show lines that appear unrecognized by index
-        return false;
-      });
-      // Fallback: show explicit listing if provided (we don't have indices), so show those raw lines that don't match events
+    const unrecCount = result.statistics?.unrecognized_lines ?? result.unrecognized_lines ?? 0;
+    unrec.textContent = `${unrecCount} unrecognized lines`;
+    const unrecList = document.getElementById('analysisUnrecognizedList');
+    if (unrecCount > 0 && result.raw_lines) {
       const eventMsgs = new Set((result.events || []).map(e => (e.raw || e.message || '').trim()));
-      const list = document.createElement('div');
-      result.raw_lines.forEach(l => {
-        if (!eventMsgs.has(l.trim())) {
-          const item = document.createElement('div'); item.style.font = '12px var(--mono)'; item.style.color = 'var(--muted)'; item.textContent = l; list.appendChild(item);
-        }
-      });
-      unrec.appendChild(list);
+      const lines = result.raw_lines.filter(l => !eventMsgs.has((l || '').replace(/[\r\n]+$/, '').trim()));
+      unrecList.textContent = lines.slice(0,200).join('');
+    } else {
+      unrecList.textContent = '';
     }
+    document.getElementById('toggleUnrec').onclick = ()=>{
+      const el = document.getElementById('analysisUnrecognizedList');
+      if (el.style.display === 'block') { el.style.display='none'; document.getElementById('toggleUnrec').textContent='Show unrecognized lines'; }
+      else { el.style.display='block'; document.getElementById('toggleUnrec').textContent='Hide unrecognized lines'; }
+    };
 
     // Raw log
     const raw = document.getElementById('analysisRaw');
-    raw.textContent = (result.raw_lines || []).join('\n');
-
-    // Health explanation
+    raw.textContent = (result.raw_lines || []).join('');
+    // Health explanation / Executive summary / Recommendation
     const explEl = document.getElementById('analysisExplanation');
-    explEl.textContent = result.health_explanation || "";
+    if (explEl) explEl.textContent = result.health_explanation || "";
 
-    // Executive summary
     const execEl = document.getElementById('analysisExecutive');
-    execEl.textContent = result.executive_summary || "";
+    const summaryText = result.analysis_summary || result.executive_summary || "";
+    const recommendationMarker = 'Recommended action:';
+    const markerIndex = summaryText.indexOf(recommendationMarker);
+    execEl.textContent = markerIndex >= 0
+      ? summaryText.slice(0, markerIndex).trim()
+      : summaryText;
 
-    // Badge for transient warnings
-    const badge = document.getElementById('analysisBadge');
-    if (result.health_explanation) {
-      badge.textContent = '⚠ Warnings observed';
-      badge.style.color = 'var(--warn)';
-    } else {
-      badge.textContent = '';
+    const recEl = document.getElementById('analysisRecommendation');
+    // Preferred source for recommendation: report[0].recommended_action
+    let recText = '';
+    if (result.report && result.report.length && result.report[0].recommended_action) {
+      recText = result.report[0].recommended_action;
     }
+    if (!recText && result.recommended_action) recText = result.recommended_action;
+    if (!recText && markerIndex >= 0) {
+      recText = summaryText.slice(markerIndex + recommendationMarker.length).trim();
+    }
+    if (!recText) recText = 'No specific recommendation provided.';
+    recEl.textContent = recText;
+
+    // Badge for health status — make HEALTHY+recovered prominent
+    const badge = document.getElementById('analysisBadge');
+    const h = result.health || {};
+    const st = (h.status || 'UNKNOWN').toUpperCase();
+    let badgeText = st;
+    if (st === 'HEALTHY' && (result.health_explanation || (result.notable_events && result.notable_events.length))) {
+      badgeText = 'HEALTHY — RECOVERED';
+    }
+    badge.textContent = badgeText;
+    badge.className = 'status-badge gray';
+    if (st === 'HEALTHY') badge.classList.add('green');
+    else if (st === 'RECOVERING' || st === 'WARNING') badge.classList.add('amber');
+    else if (st === 'CRITICAL') badge.classList.add('red');
+    else badge.classList.add('gray');
 
     modal.classList.add('show');
+    modal.querySelector('.analysis-left').scrollTop = 0;
+    modal.querySelector('.analysis-right').scrollTop = 0;
 
     document.getElementById('closeAnalysisBtn').onclick = () => {
       modal.classList.remove('show');

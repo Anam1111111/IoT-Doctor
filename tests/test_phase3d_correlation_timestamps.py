@@ -35,4 +35,6 @@ def test_timestamps_start_end_duration_and_unrelated_do_not_merge(tmp_path):
     assert any(e.get("message") == "Device connected" for e in first.get("related_events", []))
     # Unrelated error should not be included in related_events
     assert all("some other error" not in (e.get("message") or "").lower() for e in first.get("related_events", []))
+    # The second incident is associated with its own later sequence.
+    assert second.get("start_time").startswith("2026-09-11T12:10:00")
 

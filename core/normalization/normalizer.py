@@ -39,8 +39,11 @@ class EventNormalizer:
         if parsed_data.get("timestamp"):
             meta["parsed_timestamp"] = parsed_data.get("timestamp")
 
-        # Expose category only when event_type indicates a known lifecycle
-        category = event_type if event_type != "log" else None
+        category = (
+            parsed_data.get("category")
+            or parsed_data.get("component")
+            or event_type
+        )
 
         return make_event(
             level=level,
@@ -55,4 +58,5 @@ class EventNormalizer:
             event_type=event_type,
             metadata=meta,
             category=category,
+            source=transport_metadata.get("source"),
         )
