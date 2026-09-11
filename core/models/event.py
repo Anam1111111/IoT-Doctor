@@ -39,6 +39,9 @@ def make_event(
         event["log_file"] = log_file
     if raw:
         event["raw"] = raw
+    # If a parsed timestamp was provided, preserve it exactly (do not invent)
+    if metadata and metadata.get("parsed_timestamp"):
+        event["timestamp"] = metadata.get("parsed_timestamp")
     return event
 
 

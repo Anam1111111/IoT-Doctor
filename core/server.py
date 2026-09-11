@@ -212,6 +212,26 @@ def build_session_snapshot():
     except ValueError:
         started_at = None
     health_data = health.status()
+    # Build incidents from diagnostics historical findings
+    incidents = [
+        {
+            "category": f.category,
+            "title": f.title,
+            "severity": f.severity,
+            "evidence": f.evidence,
+            "status": getattr(f, "status", "INCIDENT"),
+        }
+        for f in diagnostics.historical_findings()
+    ]
+
+    # health_explanation for live snapshot when HEALTHY but warnings observed
+    health_explanation = None
+    if health_data.get("status") == "HEALTHY" and incidents:
+        warning_count = sum(1 for i in incidents if i.get("severity") in ("WARNING", "CRITICAL"))
+        health_explanation = (
+            f"{warning_count} warning(s) observed during live session. The conditions recovered and no persistent failure pattern was detected."
+        )
+
     return {
         "type": "session_snapshot",
         "data": {
@@ -222,6 +242,8 @@ def build_session_snapshot():
             "events": session.load_events(filename),
             "health": health_data,
             "findings": health_data.get("findings", []),
+            "incidents": incidents,
+            "health_explanation": health_explanation,
         },
     }
 

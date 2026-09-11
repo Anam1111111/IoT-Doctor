@@ -504,6 +504,95 @@
 
   .import-result.show { display: block; }
 
+  /* Analysis modal */
+  .analysis-modal {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    background: #000000cc;
+    z-index: 60;
+  }
+
+  .analysis-modal.show { display: flex; }
+
+  .analysis-card {
+    width: min(1100px, 96%);
+    max-height: 90%;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+    box-shadow: 0 24px 80px #00000088;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .analysis-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .analysis-body {
+    display: flex;
+    gap: 18px;
+    padding: 18px;
+    overflow: hidden;
+    flex: 1;
+  }
+
+  .analysis-left {
+    width: 420px;
+    flex: 0 0 420px;
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
+    padding-right: 12px;
+  }
+
+  .analysis-right {
+    flex: 1;
+    overflow-y: auto;
+    padding-left: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .analysis-section {
+    padding: 8px 0;
+    border-bottom: 1px solid #ffffff06;
+  }
+
+  .raw-log {
+    white-space: pre-wrap;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    background: var(--panel-raised);
+    padding: 12px;
+    border-radius: 6px;
+    overflow: auto;
+    max-height: 280px;
+  }
+
+  .timeline-item {
+    padding: 8px 0;
+    border-bottom: 1px dashed #ffffff06;
+  }
+
+  .finding-item {
+    padding: 8px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.02);
+    margin-bottom: 8px;
+  }
+
   .result-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -828,6 +917,62 @@
 
   </div>
 
+</div>
+
+<!-- Analysis modal shown after successful import -->
+<div class="analysis-modal" id="analysisModal" role="dialog" aria-modal="true">
+  <div class="analysis-card">
+    <div class="analysis-header">
+      <div>
+        <div style="font:700 14px var(--mono);">LOG ANALYSIS</div>
+        <div id="analysisFilename" style="font:600 12px var(--mono); color:var(--muted);">-</div>
+      </div>
+      <div>
+        <span id="analysisBadge" style="display:inline-block;margin-right:8px;color:var(--muted);"></span>
+        <button class="btn" id="closeAnalysisBtn">Close</button>
+      </div>
+    </div>
+    <div class="analysis-body">
+      <div class="analysis-left">
+        <div class="analysis-section">
+          <div class="panel-label">EXECUTIVE SUMMARY</div>
+          <div id="analysisExecutive" style="font:600 14px var(--mono); margin-bottom:8px;"></div>
+        </div>
+        <div class="analysis-section">
+          <div class="panel-label">OVERVIEW</div>
+          <div style="font:600 16px var(--mono);" id="overviewHealth">HEALTH: UNKNOWN</div>
+          <div id="overviewStats" style="margin-top:10px; color:var(--muted); font:12px var(--mono);"></div>
+        </div>
+
+        <div class="analysis-section">
+          <div class="panel-label">FINDINGS</div>
+          <div id="analysisFindings"></div>
+        </div>
+      </div>
+
+      <div class="analysis-right">
+        <div class="analysis-section">
+          <div class="panel-label">EVENT TIMELINE</div>
+          <div id="analysisTimeline"></div>
+        </div>
+
+        <div class="analysis-section">
+          <div class="panel-label">SUMMARY</div>
+          <div id="analysisExplanation" style="color:var(--muted); font:12px var(--mono);"></div>
+        </div>
+
+        <div class="analysis-section">
+          <div class="panel-label">UNRECOGNIZED LINES</div>
+          <div id="analysisUnrecognized" style="color:var(--muted); font:12px var(--mono);"></div>
+        </div>
+
+        <div class="analysis-section">
+          <div class="panel-label">RAW LOG</div>
+          <div id="analysisRaw" class="raw-log"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -2160,6 +2305,122 @@
     ).classList.add(
       "show"
     );
+
+    // Hide the import overlay and populate and show analysis modal
+    importOverlay.classList.remove('show');
+    const modal = document.getElementById("analysisModal");
+
+    document.getElementById("analysisFilename").textContent =
+      (result?.source?.filename) ||
+      result?.filename ||
+      "Imported log";
+
+    document.getElementById("overviewHealth").textContent =
+      `HEALTH: ${health.status || "UNKNOWN"}`;
+
+    document.getElementById("overviewStats").innerHTML =
+      `${stats.lines_total ?? 0} lines &nbsp;&nbsp; ${stats.events_parsed ?? 0} parsed &nbsp;&nbsp; ${stats.unrecognized_lines ?? 0} unrecognized &nbsp;&nbsp; ${(result?.findings || []).length} findings`;
+    document.getElementById("overviewStats").innerHTML =
+      `${stats.lines_total ?? 0} lines &nbsp;&nbsp; ${stats.events_parsed ?? 0} parsed &nbsp;&nbsp; ${stats.unrecognized_lines ?? 0} unrecognized &nbsp;&nbsp; ${(result?.findings || []).length} findings`;
+
+    // Findings
+    const findingsDiv = document.getElementById("analysisFindings");
+    findingsDiv.innerHTML = "";
+    // Incidents (prepend to findings)
+    (result?.incidents || []).forEach(i => {
+      const item = document.createElement('div');
+      item.className = 'finding-item';
+      const sev = document.createElement('div'); sev.style.font = '700 12px var(--mono)'; sev.textContent = (i.severity ? (i.severity + ' ') : '') + (i.title || 'Incident');
+      const expl = document.createElement('div'); expl.style.color = 'var(--muted)'; expl.style.font = '12px var(--mono)'; expl.textContent = i.evidence || '';
+      item.appendChild(sev);
+      if (expl.textContent) item.appendChild(expl);
+      findingsDiv.appendChild(item);
+    });
+    (result?.findings || []).forEach(f => {
+      const item = document.createElement('div');
+      item.className = 'finding-item';
+      const sev = document.createElement('div');
+      sev.style.font = '700 12px var(--mono)';
+      sev.textContent = (f.severity ? (f.severity + ' ') : '') + (f.title || 'Finding');
+      const expl = document.createElement('div');
+      expl.style.color = 'var(--muted)';
+      expl.style.font = '12px var(--mono)';
+      expl.textContent = f.description || f.explanation || '';
+      const evidence = document.createElement('div');
+      evidence.style.marginTop = '6px';
+      evidence.style.color = 'var(--muted)';
+      evidence.style.font = '12px var(--mono)';
+      evidence.textContent = f.evidence || f.details || '';
+      item.appendChild(sev);
+      if (expl.textContent) item.appendChild(expl);
+      if (evidence.textContent) {
+        const evLabel = document.createElement('div'); evLabel.style.font = '600 11px var(--mono)'; evLabel.textContent = 'Evidence:'; item.appendChild(evLabel);
+        item.appendChild(evidence);
+      }
+      if (f.recommended_action) {
+        const actionLabel = document.createElement('div'); actionLabel.style.font = '600 11px var(--mono)'; actionLabel.textContent = 'Recommended action:'; item.appendChild(actionLabel);
+        const action = document.createElement('div'); action.style.color = 'var(--muted)'; action.style.font = '12px var(--mono)'; action.textContent = f.recommended_action; item.appendChild(action);
+      }
+      findingsDiv.appendChild(item);
+    });
+
+    // Timeline
+    const timeline = document.getElementById('analysisTimeline');
+    timeline.innerHTML = '';
+    (result?.events || []).slice().forEach(ev => {
+      const row = document.createElement('div');
+      row.className = 'timeline-item';
+      const ts = document.createElement('div'); ts.style.font = '600 12px var(--mono)'; ts.style.color = 'var(--dim)'; ts.textContent = ev.timestamp || '';
+      const line = document.createElement('div'); line.style.marginTop = '4px'; line.textContent = `${ev.level || 'INFO'}  ${ev.message || ''}`;
+      row.appendChild(ts); row.appendChild(line);
+      timeline.appendChild(row);
+    });
+
+    // Unrecognized lines
+    const unrec = document.getElementById('analysisUnrecognized');
+    unrec.innerHTML = '';
+    if (result?.statistics?.unrecognized_lines && result.raw_lines) {
+      const lines = result.raw_lines.filter((_, i) => {
+        // crude: assume parsed events count correspond to first N lines; show lines that appear unrecognized by index
+        return false;
+      });
+      // Fallback: show explicit listing if provided (we don't have indices), so show those raw lines that don't match events
+      const eventMsgs = new Set((result.events || []).map(e => (e.raw || e.message || '').trim()));
+      const list = document.createElement('div');
+      result.raw_lines.forEach(l => {
+        if (!eventMsgs.has(l.trim())) {
+          const item = document.createElement('div'); item.style.font = '12px var(--mono)'; item.style.color = 'var(--muted)'; item.textContent = l; list.appendChild(item);
+        }
+      });
+      unrec.appendChild(list);
+    }
+
+    // Raw log
+    const raw = document.getElementById('analysisRaw');
+    raw.textContent = (result.raw_lines || []).join('\n');
+
+    // Health explanation
+    const explEl = document.getElementById('analysisExplanation');
+    explEl.textContent = result.health_explanation || "";
+
+    // Executive summary
+    const execEl = document.getElementById('analysisExecutive');
+    execEl.textContent = result.executive_summary || "";
+
+    // Badge for transient warnings
+    const badge = document.getElementById('analysisBadge');
+    if (result.health_explanation) {
+      badge.textContent = '⚠ Warnings observed';
+      badge.style.color = 'var(--warn)';
+    } else {
+      badge.textContent = '';
+    }
+
+    modal.classList.add('show');
+
+    document.getElementById('closeAnalysisBtn').onclick = () => {
+      modal.classList.remove('show');
+    };
   }
 
   const importOverlay =

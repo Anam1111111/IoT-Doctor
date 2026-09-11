@@ -22,6 +22,10 @@ class EventNormalizer:
         message = parsed_data.get("message")
         if message is None:
             message = raw if isinstance(raw, str) else str(raw or "")
+        # If parser provided a timestamp field, pass it through via metadata
+        meta = dict(transport_metadata or {})
+        if parsed_data.get("timestamp"):
+            meta["parsed_timestamp"] = parsed_data.get("timestamp")
 
         return make_event(
             level=level,
@@ -34,5 +38,5 @@ class EventNormalizer:
             device_id=self.device_id,
             transport=transport_metadata.get("transport"),
             event_type=event_type,
-            metadata=transport_metadata,
+            metadata=meta,
         )
