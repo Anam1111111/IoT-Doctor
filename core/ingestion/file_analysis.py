@@ -15,6 +15,8 @@ class FileAnalysisService:
         self.parser = parser
         self.profile = profile
         self.max_bytes = max_bytes
+        # remember whether a parser instance was explicitly provided (legacy)
+        self._explicit_parser_provided = parser is not None
 
     def analyze(self, path, metadata=None):
         metadata = dict(metadata or {})
@@ -41,72 +43,172 @@ class FileAnalysisService:
             r"^(?P<timestamp>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?)"
             r"\s*\[(?P<level>\w+)\]\s*(?:(?P<component>[^:]+):\s*)?(?P<message>.+)$"
         )
+        # Parser registry + detector
+        from core.parser import registry as parser_registry
+        from core.parser import detector
+
+        preferred_parser_name = None
+        # if profile explicitly provides parser hint use it
+        if self.profile.get("parser"):
+            preferred_parser_name = self.profile.get("parser")
+
         for raw_line in FileReader(path, self.max_bytes).lines():
             lines_total += 1
             line = raw_line.rstrip("\r\n")
             raw_lines.append(raw_line)
             if not line:
                 continue
+            # Detect best parser
             parsed = None
             structured = False
+            parse_result = None
             try:
-                parsed = self.parser.parse(line)
-                if parsed is not None:
-                    structured = True
-            except Exception:
-                parsed = None
+                # prefer explicit profile parser, then provided self.parser,
+                # then fall back to detector-registered parsers
+                parser = None
+                if preferred_parser_name:
+                    parser = parser_registry.get(preferred_parser_name)
+                if not parser:
+                    # use the parser instance passed into the service (profile-specific)
+                    parser = getattr(self, 'parser', None)
+                if not parser:
+                    candidates = detector.detect_format(line)
+                    if candidates:
+                        parser = parser_registry.get(candidates[0][0])
 
-            if parsed is None:
-                # Attempt a generic timestamped-line parse
+                if parser:
+                    parse_result = parser.parse([line])
+                    # Backwards-compat: some parsers still accept a single string
+                    # and return a legacy dict. If list-based parse returned
+                    # nothing, try the string-based legacy call.
+                    if parse_result is None:
+                        try:
+                            legacy = parser.parse(line)
+                            if isinstance(legacy, dict):
+                                parsed = legacy
+                                structured = True
+                        except Exception:
+                            pass
+            except Exception:
+                parse_result = None
+
+            if parse_result is None:
+                # Attempt generic timestamped-line parse (legacy fallback)
                 import re
 
                 m = re.match(generic_ts_re, line)
                 if m:
                     parsed = {k: v for k, v in m.groupdict().items() if v is not None}
-                    # Validate parsed timestamp: reject impossible calendar/time
+                    # Validate parsed timestamp
                     ts = parsed.get("timestamp")
                     if ts:
                         from datetime import datetime as _dt
                         try:
-                            # Accept ISO-like and space-separated timestamps
                             parsed_ts = _dt.fromisoformat(ts)
-                            # If parsed successfully, keep as-is
                         except Exception:
-                            # Try common time-only HH:MM:SS patterns as fallback
                             try:
                                 _dt.strptime(ts, "%H:%M:%S")
                             except Exception:
-                                # Invalid timestamp — treat as missing so the
-                                # event is still parsed but without a valid timestamp
                                 parsed.pop("timestamp", None)
                     structured = True
+                    parse_result = None
                 else:
-                    # Unrecognized but preserve raw line as an event
-                    unrecognized_lines += 1
-                    parsed = {"message": line, "raw": line, "level": "UNKNOWN"}
-            event_type = self._event_type(parsed)
-            event = normalizer.normalize(
-                parsed,
-                raw=line,
-                transport_metadata={
-                    "transport": "file",
-                    "source": "file",
-                    "filename": filename,
-                },
-                event_type=event_type,
-            )
-            try:
-                event_metrics = extractor.extract(event)
-                diagnostics.process(event, event_metrics)
-            except Exception:
-                # If metric extraction/diagnostics fail, still keep the event
-                event_metrics = []
+                        # Unrecognized; low-confidence. However, if configured metrics
+                        # can be extracted from this raw line (e.g., uptime), treat
+                        # it as structured for the purpose of metrics/diagnostics.
+                        parsed = {"message": line, "raw": line, "level": "UNKNOWN"}
+                        # Attempt metric extraction via normalizer to see if the
+                        # line contains diagnostically-relevant information.
+                        try:
+                            temp_event = normalizer.normalize(
+                                parsed,
+                                raw=line,
+                                transport_metadata={
+                                    "transport": "file",
+                                    "source": "file",
+                                    "filename": filename,
+                                },
+                                event_type=self._event_type(parsed),
+                            )
+                            temp_metrics = extractor.extract(temp_event)
+                        except Exception:
+                            temp_metrics = []
+
+                        if temp_metrics:
+                            structured = True
+                        else:
+                            # Compatibility: if a parser instance was explicitly
+                            # provided to the service (legacy/profile usage), and
+                            # the raw line contains clear connection keywords,
+                            # allow it to be considered structured for connectivity
+                            # diagnostics only. This preserves legacy behavior
+                            # while still preventing wholly unparsed/raw Android
+                            # noise from triggering diagnostics in auto-detect mode.
+                            if self._explicit_parser_provided:
+                                low = line.lower()
+                                if any(k in low for k in ("disconnected", "reconnect", "retry", "connected")):
+                                    structured = True
+                                else:
+                                    unrecognized_lines += 1
+                            else:
+                                unrecognized_lines += 1
+                        parse_result = None
+
+            # Build canonical event and only run diagnostics when parse confidence is sufficient
+            if parse_result:
+                # Map ParseResult.fields through normalizer
+                event = normalizer.normalize(
+                    parse_result.fields,
+                    raw=line,
+                    transport_metadata={
+                        "transport": "file",
+                        "source": parse_result.format,
+                        "filename": filename,
+                    },
+                    event_type=self._event_type(parse_result.fields),
+                )
+                parsed_lines += 1
+                # Attach parse metadata
+                event["parse_format"] = parse_result.format
+                event["parse_confidence"] = parse_result.confidence
+                event["raw_lines"] = parse_result.raw_lines
+
+                try:
+                    event_metrics = extractor.extract(event)
+                    # Gate diagnostics: only process if confidence >= 0.5 or profile forces
+                    force_diag = bool(self.profile.get("allow_unparsed_diagnostics", False))
+                    if parse_result.confidence >= 0.5 or force_diag:
+                        diagnostics.process(event, event_metrics)
+                except Exception:
+                    event_metrics = []
+            else:
+                # Unstructured event; normalize for UI but do NOT run diagnostics
+                event = normalizer.normalize(
+                    parsed,
+                    raw=line,
+                    transport_metadata={
+                        "transport": "file",
+                        "source": "file",
+                        "filename": filename,
+                    },
+                    event_type=self._event_type(parsed),
+                )
+                # Extract metrics for display; do not run diagnostics for wholly unparsed/raw lines
+                try:
+                    event_metrics = extractor.extract(event)
+                except Exception:
+                    event_metrics = []
+                # Count as parsed for health only if it was structured (generic timestamp parse)
+                if structured:
+                    parsed_lines += 1
+                    # For structured generic parses, it's safe to run diagnostics
+                    try:
+                        diagnostics.process(event, event_metrics)
+                    except Exception:
+                        pass
 
             events.append(event)
             metrics.extend(event_metrics)
-            # Count as parsed for health only if it was structured (parser or generic)
-            if structured:
-                parsed_lines += 1
 
             health.update(
                 event,
