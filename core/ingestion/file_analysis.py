@@ -106,15 +106,118 @@ class FileAnalysisService:
             health_data["status"] = "UNKNOWN"
             health_data["reason"] = "Insufficient parsed events"
         # Build incident summaries from diagnostics
+        # Correlate historical findings into richer incident summaries
         incidents = []
-        for f in diagnostics.historical_findings():
+        hist = diagnostics.historical_findings()
+        # Helper to parse timestamps from event or finding
+        from datetime import datetime as _dt
+
+        def _parse_ts(ts_str):
+            if not ts_str:
+                return None
+            try:
+                # Try ISO first
+                return _dt.fromisoformat(ts_str)
+            except Exception:
+                pass
+            # Try time-only HH:MM:SS
+            try:
+                return _dt.strptime(ts_str, "%H:%M:%S")
+            except Exception:
+                return None
+
+        for f in hist:
+            # Choose keywords by category
+            if f.category == "connectivity":
+                keywords = ["disconnected", "reconnect", "connected", "retry", "attempt"]
+            elif f.category == "reboot":
+                keywords = ["uptime", "reset"]
+            elif f.category == "errors":
+                keywords = ["error", "failed"]
+            else:
+                keywords = []
+
+            # Find candidate related event indices preserving order
+            candidate_indices = []
+            for idx, ev in enumerate(events):
+                msg = (ev.get("message") or "").lower()
+                if any(k in msg for k in keywords):
+                    candidate_indices.append(idx)
+
+            # Group contiguous candidate indices into correlation blocks
+            blocks = []
+            block = []
+            for i in candidate_indices:
+                if not block:
+                    block = [i]
+                    continue
+                if i == block[-1] + 1:
+                    block.append(i)
+                else:
+                    blocks.append(block)
+                    block = [i]
+            if block:
+                blocks.append(block)
+
+            # Prefer the largest block that likely corresponds to the finding
+            chosen_block = blocks[0] if blocks else []
+            if blocks:
+                chosen_block = max(blocks, key=lambda b: len(b))
+
+            related = [events[i] for i in chosen_block]
+
+            # Determine start/end timestamps from related events if available
+            start_time = None
+            end_time = None
+            parsed_times = [
+                _parse_ts(e.get("timestamp")) for e in related if e.get("timestamp")
+            ]
+            if parsed_times:
+                start_dt = parsed_times[0]
+                end_dt = parsed_times[-1]
+                start_time = start_dt.isoformat() if start_dt else None
+                end_time = end_dt.isoformat() if end_dt else None
+            else:
+                # Fall back to finding timestamps
+                start_time = getattr(f, "created_at", None)
+                end_time = getattr(f, "resolved_at", None)
+
+            duration = None
+            if start_time and end_time:
+                try:
+                    duration = (
+                        _parse_ts(end_time) - _parse_ts(start_time)
+                    ).total_seconds()
+                except Exception:
+                    duration = None
+
+            impact = None
+            if f.category == "connectivity":
+                reconnect_attempts = sum(
+                    1
+                    for e in related
+                    if any(k in (e.get("message") or "").lower() for k in ("retry", "reconnect", "attempt", "failed"))
+                    and "connected" not in (e.get("message") or "").lower()
+                )
+                recovered = any((e.get("message") or "").lower() == "device connected" for e in related)
+                impact = {
+                    "reconnect_attempts": reconnect_attempts,
+                    "recovered": recovered,
+                }
+
             incidents.append(
                 {
+                    "id": getattr(f, "id", None),
                     "category": f.category,
                     "title": f.title,
                     "severity": f.severity,
                     "evidence": f.evidence,
                     "status": getattr(f, "status", "INCIDENT"),
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "duration": duration,
+                    "related_events": related,
+                    "impact": impact,
                 }
             )
 
