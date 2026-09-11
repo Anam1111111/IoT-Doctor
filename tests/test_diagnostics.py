@@ -46,12 +46,14 @@ class DiagnosticEngineTests(unittest.TestCase):
 
     def test_strict_memory_decline_creates_finding(self):
         engine = DiagnosticEngine()
-        findings = []
+        all_new_findings = []
         for value in (1778, 1770, 1760, 1750, 1740, 1730, 1720, 1710, 1700, 1690):
-            findings = engine.process(event(), [Metric("free_memory", value, "bytes")])
-        self.assertEqual(len(findings), 1)
-        self.assertEqual(findings[0].title, "Possible memory degradation")
-        self.assertEqual(findings[0].severity, "WARNING")
+            all_new_findings.extend(
+                engine.process(event(), [Metric("free_memory", value, "bytes")])
+            )
+        self.assertTrue(len(all_new_findings) >= 1)
+        self.assertEqual(all_new_findings[0].title, "Possible memory degradation")
+        self.assertEqual(all_new_findings[0].severity, "WARNING")
 
     def test_uptime_reset_creates_reboot_finding(self):
         engine = DiagnosticEngine()

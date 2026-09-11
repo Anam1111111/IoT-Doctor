@@ -63,6 +63,22 @@ class FileAnalysisService:
                 m = re.match(generic_ts_re, line)
                 if m:
                     parsed = {k: v for k, v in m.groupdict().items() if v is not None}
+                    # Validate parsed timestamp: reject impossible calendar/time
+                    ts = parsed.get("timestamp")
+                    if ts:
+                        from datetime import datetime as _dt
+                        try:
+                            # Accept ISO-like and space-separated timestamps
+                            parsed_ts = _dt.fromisoformat(ts)
+                            # If parsed successfully, keep as-is
+                        except Exception:
+                            # Try common time-only HH:MM:SS patterns as fallback
+                            try:
+                                _dt.strptime(ts, "%H:%M:%S")
+                            except Exception:
+                                # Invalid timestamp — treat as missing so the
+                                # event is still parsed but without a valid timestamp
+                                parsed.pop("timestamp", None)
                     structured = True
                 else:
                     # Unrecognized but preserve raw line as an event
@@ -111,14 +127,18 @@ class FileAnalysisService:
 
             positive_patterns = [
                 r"\bconnected\b",
-                r"connection established",
+                r"(connection|link) established",
                 r"handshake",
-                r"verification (passed|complete|completed|succeeded)",
-                r"provisioning (completed|success|succeeded)",
+                r"status\s*=\s*ready",
+                r"heartbeat received",
+                r"verification\s*(=|is)?\s*pass(ed)?",
+                r"verification (complete|completed|succeeded)",
+                r"provisioning\s*(=|is)?\s*(complete|completed|success|succeeded)",
                 r"acknowledg(e|ed|ement) (received|ok|success|succeeded)",
                 r"ack (received|ok|success)",
                 r"completed successfully",
                 r"successfully (connected|provisioned|verified)",
+                r"session closed cleanly",
             ]
             prog = re.compile("|".join(positive_patterns), re.IGNORECASE)
             for e in ev_list:
@@ -135,24 +155,14 @@ class FileAnalysisService:
             health.connection_state = "CONNECTED"
 
         health_data = health.status()
-        has_disconnect_evidence = any(
-            "disconnected" in (event.get("message") or "").lower()
-            for event in events
-        )
-        if (
-            parsed_lines > 0
-            and health_data["status"] == "CRITICAL"
-            and not health_data["connected"]
-            and not has_disconnect_evidence
-        ):
-            health_data["status"] = "UNKNOWN"
-            health_data["reason"] = "Insufficient connection evidence in imported log"
-            health_data["connection_state"] = "UNKNOWN"
         # If we parsed zero structured events, mark overall health UNKNOWN
+        # only when there are no diagnostic findings; if diagnostics found
+        # evidence (e.g., reboot via metrics), prefer diagnostic-driven status.
         if parsed_lines == 0:
-            health_data["status"] = "UNKNOWN"
-            health_data["reason"] = "Insufficient parsed events"
-            notable_events = []  # Initialize notable_events list
+            if not diagnostics.all_findings():
+                health_data["status"] = "UNKNOWN"
+                health_data["reason"] = "Insufficient parsed events"
+                notable_events = []  # Initialize notable_events list
         # Build incident summaries from diagnostics
         # Correlate historical findings into richer incident summaries
         incidents = []
@@ -164,8 +174,10 @@ class FileAnalysisService:
             if not ts_str:
                 return None
             try:
-                # Try ISO first
-                return _dt.fromisoformat(ts_str)
+                # Try ISO first; normalize to naive so relative comparisons
+                # between mixed timestamp formats never raise TypeError.
+                parsed = _dt.fromisoformat(ts_str)
+                return parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
             except Exception:
                 pass
             # Try time-only HH:MM:SS
@@ -256,7 +268,14 @@ class FileAnalysisService:
                     if any(k in (e.get("message") or "").lower() for k in ("retry", "reconnect", "attempt", "failed"))
                     and "connected" not in (e.get("message") or "").lower()
                 )
-                recovered = any((e.get("message") or "").lower() == "device connected" for e in related)
+                # Consider a variety of recovery messages as evidence: not just
+                # the literal "Device connected" but any message mentioning
+                # "connected" or indicating recovery.
+                recovered = any(
+                    "connected" in (e.get("message") or "").lower()
+                    or "recovered" in (e.get("message") or "").lower()
+                    for e in related
+                )
                 impact = {
                     "reconnect_attempts": reconnect_attempts,
                     "recovered": recovered,
@@ -283,6 +302,7 @@ class FileAnalysisService:
         recovery_terms = (
             "acknowledgement received",
             "acknowledgment received",
+            "acknowledged",
             "retry succeeded",
             "recovered",
             "verification passed",
@@ -327,11 +347,22 @@ class FileAnalysisService:
                 if start_dt is not None and end_dt is not None
                 else None
             )
+            # Derive a neutral but specific title from the observed timeout
+            first_msg = (related[0].get("message") or "").lower()
+            if "command" in first_msg and "ack" in first_msg or "command acknowledgement" in first_msg:
+                title_text = "Command acknowledgement timeout recovered"
+            elif "sensor" in first_msg or "sensor" in first_msg.split():
+                title_text = "Sensor response timeout recovered"
+            else:
+                # Preserve as a generic timeout but echo the observed phrase
+                observed = related[0].get("message") or "timeout"
+                title_text = f"Timeout recovered: {observed}"
+
             incidents.append(
                 {
                     "id": None,
                     "category": "timeout",
-                    "title": "Command acknowledgement timeout recovered",
+                    "title": title_text,
                     "severity": "WARNING",
                     "evidence": (
                         f"Timeout observed: {related[0].get('message')}. "
@@ -348,13 +379,24 @@ class FileAnalysisService:
 
         # Build notable events summary (WARN/ERROR) deterministically from parsed events
         notable_events = []
+        # Include WARN/ERROR plus explicit reboot-related events regardless of level
+        # include 'uptime' to capture lines like 'Uptime=0s' as key events
+        reboot_keywords = ("reboot", "restarted", "restart", "uptime reset", "uptime", "reset", "started after reset")
         for ev in events:
             lvl = (ev.get("level") or "").upper()
-            if lvl in ("WARN", "WARNING", "ERROR"):
+            msg = (ev.get("message") or "").lower()
+            include = lvl in ("WARN", "WARNING", "ERROR") or any(k in msg for k in reboot_keywords)
+            if include:
+                # If this event was included solely because it matched reboot
+                # keywords and has unknown level (parser didn't provide one),
+                # mark it INFO so Key Events (UI) displays it as telemetry.
+                out_level = lvl
+                if out_level in (None, "", "UNKNOWN") and any(k in msg for k in reboot_keywords):
+                    out_level = "INFO"
                 notable_events.append(
                     {
                         "timestamp": ev.get("timestamp"),
-                        "level": lvl,
+                        "level": out_level,
                         "message": ev.get("message"),
                         "raw_line": ev.get("raw_line") or ev.get("raw"),
                     }
@@ -387,33 +429,67 @@ class FileAnalysisService:
                 + ": " + health_explanation
             )
 
-        # Build a human-readable analysis summary even when there are no incidents.
-        analysis_summary = None
-        if not incidents:
-            parts = []
-            # Notable events summary
-            if notable_events:
-                parts.append(f"{len(notable_events)} notable warning/error event(s) occurred")
-                # include first notable event brief
-                first = notable_events[0]
-                parts.append(f"first notable: {first.get('timestamp')} {first.get('level')} — {first.get('message')}")
+        # Adjust health for file-imported analysis: don't mark CRITICAL solely because the
+        # file shows no live connection evidence. If the monitor reported CRITICAL due
+        # to not connected, prefer diagnostic findings' severities for the file import.
+        if health_data.get("status") == "CRITICAL" and health_data.get("reason") == "Device not connected":
+            # Determine highest severity among findings
+            def _sev(f):
+                return f.severity if hasattr(f, "severity") else f.get("severity") if f else None
 
-            # Health-based statements
-            status = health_data.get("status")
-            if status == "UNKNOWN":
-                parts.append("Final health: UNKNOWN (insufficient parsed events or evidence)")
+            findings_list = diagnostics.all_findings() or []
+            # If a reboot finding exists, prefer WARNING health for file imports
+            if any((getattr(f, "category", None) == "reboot") or (isinstance(f, dict) and f.get("category") == "reboot") for f in findings_list):
+                health_data["status"] = "WARNING"
+                health_data["reason"] = "Reboot observed in imported log"
+            finding_severities = [s for s in (_sev(f) for f in findings_list) if s]
+            if any(s == "CRITICAL" for s in finding_severities):
+                # keep CRITICAL
+                pass
+            elif any(s == "WARNING" for s in finding_severities):
+                health_data["status"] = "WARNING"
+                health_data["reason"] = "Warning findings present in imported log"
             else:
-                parts.append(f"Final health: {status}")
+                health_data["status"] = "UNKNOWN"
+                health_data["reason"] = "Insufficient connection evidence in imported log"
+                health_data["connection_state"] = "UNKNOWN"
 
-            # Recovery inference from health_explanation or executive_summary
+        # Build a human-readable analysis summary regardless of whether
+        # correlated incidents exist, so the UI always has something to show.
+        parts = []
+        # Count only actual warning/error notable events (levels WARN/ERROR)
+        warning_error_events = [ev for ev in notable_events if (ev.get("level") or "").upper() in ("WARN", "WARNING", "ERROR")]
+        if warning_error_events:
+            parts.append(f"{len(warning_error_events)} notable warning/error event(s) occurred")
+            first = warning_error_events[0]
+            parts.append(f"first notable: {first.get('timestamp')} {first.get('level')} — {first.get('message')}")
+
+        status = health_data.get("status")
+        if status == "UNKNOWN":
+            parts.append("Final health: UNKNOWN (insufficient parsed events or evidence)")
+        else:
+            parts.append(f"Final health: {status}")
+
+        # If a reboot diagnostic was detected, prioritize it in the executive summary
+        reboot_findings = [f for f in diagnostics.historical_findings() if getattr(f, "category", None) == "reboot" or (isinstance(f, dict) and f.get("category") == "reboot")]
+        if reboot_findings:
+            rf = reboot_findings[0]
+            if isinstance(rf, dict):
+                evidence = rf.get("evidence")
+                title = rf.get("title")
+            else:
+                evidence = getattr(rf, "evidence", None)
+                title = getattr(rf, "title", None)
+            executive_summary = f"{title or 'Reboot detected'}. {evidence or ''}".strip()
+            parts = [executive_summary]
+        else:
             if executive_summary and "recovered" in (executive_summary or "").lower():
                 parts.append("Conditions recovered; no persistent failure detected.")
 
-            # Recommend next steps conservatively
-            rec = "Review the notable events and monitor the device; collect more logs if recurrence occurs."
-            parts.append(f"Recommended action: {rec}")
+        rec = "Review the notable events and monitor the device; collect more logs if recurrence occurs."
+        parts.append(f"Recommended action: {rec}")
 
-            analysis_summary = " ".join(parts) if parts else None
+        analysis_summary = " ".join(parts) if parts else None
 
         return {
             "source": {
@@ -479,11 +555,42 @@ class FileAnalysisService:
                 if impact and impact.get("reconnect_attempts", 0) > 0:
                     possible_cause = "intermittent connection loss; check cabling, power, and serial stability"
 
-            recommendation = None
-            if severity == "CRITICAL":
-                recommendation = "Investigate immediately: check device power and connections, collect more logs."
+            # Generate a concise, evidence-based recommendation per category
+            if category == "reboot":
+                recommendation = (
+                    "Inspect power, watchdog, reset, and crash indicators around the reboot timestamp."
+                )
+            elif category == "connectivity":
+                recommendation = (
+                    "Check connection stability and investigate repeated disconnects or reconnect failures."
+                )
+            elif category == "timeout":
+                    # Make timeout recommendations specific to the observed timeout
+                    first_msg = (related[0].get("message") or "").lower() if related else (title or "").lower()
+                    if "command" in first_msg or "ack" in first_msg or "acknowledg" in first_msg:
+                        recommendation = (
+                            "Check endpoint responsiveness and investigate repeated acknowledgement timeouts."
+                        )
+                    elif "sensor" in first_msg:
+                        recommendation = (
+                            "Investigate sensor responsiveness and read/response timing; monitor sensor endpoints for repeated timeouts."
+                        )
+                    else:
+                        recommendation = (
+                            "Check endpoint responsiveness and investigate repeated timeouts for the affected subsystem."
+                        )
+            elif category == "memory":
+                recommendation = (
+                    "Investigate possible memory growth or leak behavior and monitor FreeRAM over a longer run."
+                )
+            elif category == "errors":
+                recommendation = (
+                    "Inspect error messages and affected subsystems; collect surrounding logs to determine persistence."
+                )
             else:
-                recommendation = "Review the related events and monitor for recurrence."
+                recommendation = (
+                    "Review the related events and monitor for recurrence."
+                )
 
             reports.append(
                 {
@@ -511,8 +618,12 @@ class FileAnalysisService:
     @staticmethod
     def _event_type(parsed):
         message = parsed.get("message", "").lower()
-        if message == "device connected":
+        # Treat any parsed line that mentions a connection state as a
+        # connection event so diagnostic rules can inspect it. Keep the
+        # matching conservative (word containment) to avoid reclassifying
+        # unrelated messages.
+        if "device connected" == message or "connected" in message:
             return "connection"
-        if "device disconnected" in message:
+        if "device disconnected" in message or "disconnected" in message:
             return "connection"
         return "log"

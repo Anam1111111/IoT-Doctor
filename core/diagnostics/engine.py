@@ -49,7 +49,10 @@ class _UnexpectedRebootRule(_Rule):
 class _MemoryDegradationRule(_Rule):
     key = "memory_degradation"
 
-    def __init__(self, window_size=10):
+    # Use a 7-sample window by default to detect conservative degradation
+    # in shorter imported logs while remaining strict enough to avoid
+    # false positives in noisy streams.
+    def __init__(self, window_size=7):
         self.window_size = window_size
 
     def evaluate(self, events, metrics):
@@ -105,6 +108,43 @@ class _ErrorSpikeRule(_Rule):
         )
 
 
+class _PersistentFailureRule(_Rule):
+    key = "persistent_failure"
+
+    def __init__(self, window_size=40, threshold=4):
+        self.window_size = window_size
+        self.threshold = threshold
+
+    def evaluate(self, events, metrics):
+        recent = events[-self.window_size :]
+        # Look for repeated related failures and explicit max-retry/final-failure text
+        failure_terms = ["timeout", "failed", "max retry", "maximum retries", "failed after", "command failed"]
+        recovery_terms = ["recovered", "verification passed", "acknowledg", "completed successfully"]
+
+        related_failures = [e for e in recent if any(t in (e.get("message") or "").lower() for t in failure_terms) and (e.get("level") or "").upper() in ("ERROR", "CRITICAL")]
+        if len(related_failures) < self.threshold:
+            return None
+
+        # If there's any clear recovery term in the recent window, don't escalate
+        if any(any(rt in (e.get("message") or "").lower() for rt in recovery_terms) for e in recent):
+            return None
+
+        last_msg = (related_failures[-1].get("message") or "").strip()
+        evidence = f"{len(related_failures)} related error events observed; final: {last_msg}"
+
+        return Finding(
+            severity="CRITICAL",
+            title="Persistent communication failure",
+            category="communication",
+            description="Repeated related errors and final failure indicate an ongoing communication problem.",
+            evidence=evidence,
+            confidence=1.0,
+            recommended_action=(
+                "Investigate endpoint responsiveness and device state; collect surrounding logs, verify retries and firmware behavior."
+            ),
+        )
+
+
 class _ConnectionInstabilityRule(_Rule):
     key = "connection_instability"
 
@@ -152,6 +192,7 @@ class DiagnosticEngine:
         self.historical_mode = historical_mode
         self.rules = rules or [
             _UnexpectedRebootRule(minimum_previous_uptime=10, startup_uptime=2),
+            _PersistentFailureRule(),
             _MemoryDegradationRule(),
             _ErrorSpikeRule(window_size=event_window),
             _ConnectionInstabilityRule(window_size=event_window),

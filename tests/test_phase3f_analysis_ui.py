@@ -27,4 +27,7 @@ def test_analysis_ui_renders_exact_raw_lines_and_required_key_event_terms():
 
     assert "raw.textContent = (result.raw_lines || []).join('');" in html
     assert "timeout|disconnect|reconnect|reboot|restart|reset|recover|complet|verif" in html
+    assert "const keyEvents = result?.events || [];" in html
+    assert "const isUptimeReset = uptime === 0 && previousUptime !== null && previousUptime > 0;" in html
+    assert "const isPostResetStart = rebootResetSeen && /\\bstarted\\b/i.test(message);" in html
     assert "#analysisTimeline { max-height: 330px; overflow-y: auto; }" in html

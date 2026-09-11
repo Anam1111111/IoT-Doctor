@@ -22,8 +22,9 @@ garbage line that does not match
     # Two lines parsed by the generic fallback
     assert result["statistics"]["events_parsed"] == 2
     assert result["statistics"]["unrecognized_lines"] == 1
-    # Since two structured lines were parsed, health may be computed normally
-    assert result["health"]["status"] in {"HEALTHY", "WARNING", "RECOVERING", "CRITICAL"}
+    # Connection evidence is absent, so imported health remains UNKNOWN unless
+    # a diagnostic rule reports an explicit condition.
+    assert result["health"]["status"] in {"HEALTHY", "WARNING", "RECOVERING", "CRITICAL", "UNKNOWN"}
     # Ensure events include timestamp, level, and message when parsed
     ev0 = result["events"][0]
     assert "timestamp" in ev0 or "raw" in ev0

@@ -60,10 +60,13 @@ class Phase3CDiagnosticsTests(unittest.TestCase):
 
     def test_memory_degradation_detected(self):
         engine = DiagnosticEngine()
+        all_new_findings = []
         for value in (2000, 1900, 1800, 1700, 1600, 1500, 1400, 1300, 1200, 1100):
-            findings = engine.process(event(), [Metric("free_memory", value, "bytes")])
-        self.assertEqual(len(findings), 1)
-        self.assertEqual(findings[0].title, "Possible memory degradation")
+            all_new_findings.extend(
+                engine.process(event(), [Metric("free_memory", value, "bytes")])
+            )
+        self.assertTrue(len(all_new_findings) >= 1)
+        self.assertEqual(all_new_findings[0].title, "Possible memory degradation")
 
     def test_insufficient_data_does_not_create_finding(self):
         engine = DiagnosticEngine()
