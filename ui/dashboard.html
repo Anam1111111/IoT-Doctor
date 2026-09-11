@@ -2388,7 +2388,13 @@
     // Findings / Incidents
     const findingsDiv = document.getElementById("analysisFindings");
     findingsDiv.innerHTML = "";
-    const incidents = result?.report?.length ? result.report : (result?.incidents || []);
+    // Prefer structured report (incidents) when available, otherwise
+    // display correlated incidents, and finally fall back to raw findings.
+    const incidents = result?.report && result.report.length
+      ? result.report
+      : (result?.incidents && result.incidents.length
+        ? result.incidents
+        : (result?.findings || []));
     if (!incidents || incidents.length === 0) {
       document.getElementById('analysisNoIncidents').style.display = 'block';
     } else {
@@ -2404,7 +2410,7 @@
         const expl = document.createElement('div'); expl.style.color = 'var(--muted)'; expl.style.font = '12px var(--mono)'; expl.textContent = i.what_happened || i.title || '';
         const evidence = document.createElement('div'); evidence.style.marginTop = '6px'; evidence.style.color = 'var(--muted)'; evidence.style.font = '12px var(--mono)'; evidence.textContent = (i.evidence && i.evidence.join) ? i.evidence.join('; ') : (i.evidence || '');
         const rec = document.createElement('div'); rec.className = 'small-inline'; rec.style.marginTop='6px'; rec.textContent = i.recovered ? 'Recovered' : (i.status || ''); rec.style.color = i.recovered ? 'var(--live)' : 'var(--muted)';
-        const action = document.createElement('div'); action.className='small-inline'; action.style.marginTop='6px'; action.textContent = i.recommended_action || '';
+        const action = document.createElement('div'); action.className='small-inline'; action.style.marginTop='6px'; action.textContent = i.recommended_action || i.recommendation || '';
         item.appendChild(title);
         if (expl.textContent) item.appendChild(expl);
         if (evidence.textContent) { const evLabel = document.createElement('div'); evLabel.style.font = '600 11px var(--mono)'; evLabel.textContent = 'Evidence:'; item.appendChild(evLabel); item.appendChild(evidence); }
@@ -2413,6 +2419,7 @@
         findingsDiv.appendChild(item);
       });
     }
+
 
     // Timeline (chronological) and Key Events
     const timeline = document.getElementById('analysisTimeline');
@@ -2425,14 +2432,30 @@
       const line = document.createElement('div'); line.style.marginTop = '4px'; line.textContent = `${ev.level || 'INFO'}  ${ev.message || ''}`;
       row.appendChild(ts); row.appendChild(line);
       timeline.appendChild(row);
+    });
+
+    // Key Events must not inherit the timeline's timestamp filter: imported
+    // logs may contain valid reboot evidence without source timestamps.
+    const keyEvents = result?.events || [];
+    let previousUptime = null;
+    let rebootResetSeen = false;
+    keyEvents.forEach(ev => {
       const L = (ev.level||'').toUpperCase();
+      const message = ev.message || '';
+      const uptimeMatch = message.match(/uptime\s*=\s*(\d+(?:\.\d+)?)\s*s?\b/i);
+      const uptime = uptimeMatch ? Number(uptimeMatch[1]) : null;
+      const isUptimeReset = uptime === 0 && previousUptime !== null && previousUptime > 0;
+      if (uptime !== null) previousUptime = uptime;
+      if (isUptimeReset) rebootResetSeen = true;
+
       const keyTerms = /timeout|disconnect|reconnect|reboot|restart|reset|recover|complet|verif/;
-      if (['WARN','WARNING','ERROR','CRITICAL'].includes(L) || keyTerms.test(ev.message || '')) {
+      const isPostResetStart = rebootResetSeen && /\bstarted\b/i.test(message);
+      if (['WARN','WARNING','ERROR','CRITICAL'].includes(L) || keyTerms.test(message) || isUptimeReset || isPostResetStart) {
         const k = document.createElement('div'); k.className='analysis-key-event';
         if (L.startsWith('ERROR') || L === 'CRITICAL') k.classList.add('error');
         else if (L.startsWith('WARN')) k.classList.add('warn');
         else k.classList.add('info');
-        k.textContent = `${ev.timestamp} ${L} ${ev.message}`;
+        k.textContent = `${ev.timestamp || ''} ${L || 'INFO'} ${message}`.trim();
         keyHost.appendChild(k);
       }
     });
@@ -2472,10 +2495,14 @@
       : summaryText;
 
     const recEl = document.getElementById('analysisRecommendation');
-    // Preferred source for recommendation: report[0].recommended_action
+    // Preferred source for recommendation: 1) report[0].recommended_action
+    // 2) findings[0].recommended_action 3) other specific recommendation fields
     let recText = '';
     if (result.report && result.report.length && result.report[0].recommended_action) {
       recText = result.report[0].recommended_action;
+    }
+    if (!recText && result.findings && result.findings.length && result.findings[0].recommended_action) {
+      recText = result.findings[0].recommended_action;
     }
     if (!recText && result.recommended_action) recText = result.recommended_action;
     if (!recText && markerIndex >= 0) {
