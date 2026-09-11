@@ -1,4 +1,5 @@
 from core.models.event import make_event
+from core.parser.base import ParseResult
 
 
 class EventNormalizer:
@@ -16,7 +17,21 @@ class EventNormalizer:
         transport_metadata=None,
         event_type="log",
     ):
-        parsed_data = parsed_data or {}
+        # Accept either legacy dict or new ParseResult
+        if isinstance(parsed_data, ParseResult):
+            pdata = parsed_data.fields or {}
+            # preserve parse metadata
+            parse_format = parsed_data.format
+            parse_confidence = parsed_data.confidence
+            raw_lines = parsed_data.raw_lines
+            is_multiline = parsed_data.is_multiline
+        else:
+            pdata = parsed_data or {}
+            parse_format = None
+            parse_confidence = None
+            raw_lines = None
+            is_multiline = False
+        parsed_data = pdata
         transport_metadata = dict(transport_metadata or {})
         # Normalize level to canonical set: INFO, WARN, ERROR, UNKNOWN
         raw_level = (parsed_data.get("level") or "").strip()
@@ -39,13 +54,21 @@ class EventNormalizer:
         if parsed_data.get("timestamp"):
             meta["parsed_timestamp"] = parsed_data.get("timestamp")
 
+        # attach parser metadata
+        if parse_format:
+            meta["parse_format"] = parse_format
+        if parse_confidence is not None:
+            meta["parse_confidence"] = parse_confidence
+        if raw_lines:
+            meta["raw_lines"] = raw_lines
+
         category = (
             parsed_data.get("category")
             or parsed_data.get("component")
             or event_type
         )
 
-        return make_event(
+        evt = make_event(
             level=level,
             message=message,
             count=parsed_data.get("count", "?"),
@@ -60,3 +83,16 @@ class EventNormalizer:
             category=category,
             source=transport_metadata.get("source"),
         )
+        # add parse metadata/top-level fields expected by consumers
+        if parse_format:
+            evt["parse_format"] = parse_format
+        if parse_confidence is not None:
+            evt["parse_confidence"] = parse_confidence
+        # optional fields from parser
+        if parsed_data.get("tag"):
+            evt["tag"] = parsed_data.get("tag")
+        if parsed_data.get("pid"):
+            evt["pid"] = parsed_data.get("pid")
+        if parsed_data.get("tid"):
+            evt["tid"] = parsed_data.get("tid")
+        return evt
