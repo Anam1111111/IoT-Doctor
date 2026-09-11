@@ -311,13 +311,19 @@
   }
 
   .btn.primary {
-    background: var(--info);
+    background: linear-gradient(180deg, #79d4ff 0%, var(--info) 100%);
     color: #071016;
-    border-color: var(--info);
+    border-color: rgba(121,212,255,0.9);
+    box-shadow: 0 10px 24px rgba(79,195,247,0.18);
+    min-height: 42px;
+    padding: 11px 18px;
+    font-size: 12px;
+    letter-spacing: 0.01em;
   }
 
   .btn.primary:hover:not(:disabled) {
-    opacity: 0.9;
+    opacity: 0.96;
+    transform: translateY(-1px);
   }
 
   .btn.danger {
@@ -511,62 +517,34 @@
     display: none;
     align-items: center;
     justify-content: center;
-    padding: 32px;
-    background: #000000cc;
+    padding: 24px;
+    background: rgba(0,0,0,0.76);
     z-index: 60;
   }
 
   .analysis-modal.show { display: flex; }
 
   .analysis-card {
-    width: min(1100px, 96%);
-    height: min(860px, 90vh);
+    width: 96vw;
+    height: 95vh;
+    max-width: 1600px;
+    max-height: 95vh;
     overflow: hidden;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 12px;
     background: var(--panel);
-    box-shadow: 0 24px 80px #00000088;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.55);
     display: flex;
     flex-direction: column;
   }
 
   .analysis-header {
-    padding: 16px 20px;
+    padding: 18px 22px 16px;
     border-bottom: 1px solid var(--border);
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
-    gap: 12px;
-  }
-  .status-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
-    border-radius: 16px;
-    font: 600 12px var(--mono);
-  }
-  .status-badge.green { background: rgba(34,197,94,0.12); color: var(--live); }
-  .status-badge.blue { background: rgba(79,195,247,0.06); color: var(--info); }
-  .status-badge.amber { background: rgba(245,166,35,0.06); color: var(--warn); }
-  .status-badge.red { background: rgba(239,68,68,0.06); color: var(--error); }
-  .status-badge.gray { background: rgba(255,255,255,0.02); color: var(--muted); }
-  /* Findings and incidents */
-  .finding-item { background: rgba(255,255,255,0.015); border: 1px solid rgba(255,255,255,0.03); }
-  .finding-item .finding-title { font-weight:700; color: var(--text); }
-  .finding-item .finding-evidence { color: var(--muted); }
-  .finding-item.recovered { border-left: 4px solid var(--live); }
-  .finding-item.warn { border-left: 4px solid var(--warn); }
-  .finding-item.critical { border-left: 4px solid var(--error); }
-  .recovery-badge { display:inline-block; padding:3px 8px; border-radius:12px; font:600 11px var(--mono); color:var(--live); background: rgba(34,197,94,0.08); margin-left:8px; }
-  .recommended-action { margin-top:6px; padding:8px; border-radius:6px; background: rgba(79,195,247,0.03); border: 1px solid rgba(79,195,247,0.04); color: var(--info); font-weight:600; }
-  /* Key event highlighting */
-  .analysis-key-event { padding:6px 8px; border-radius:6px; background: rgba(245,166,35,0.03); border:1px solid rgba(245,166,35,0.04); color: var(--text); font: 12px var(--mono); }
-  .analysis-key-event.error { background: rgba(239,68,68,0.04); border-color: rgba(239,68,68,0.06); }
-  .analysis-key-event.info { background: rgba(79,195,247,0.02); border-color: rgba(79,195,247,0.04); color: var(--info); }
-  .analysis-key-event.warn { background: rgba(245,166,35,0.03); border-color: rgba(245,166,35,0.05); color: var(--warn); }
-  /* Slight contrast improvement for important fields and keep header visible */
-  .analysis-header {
+    gap: 18px;
     box-shadow: inset 0 -1px 0 rgba(255,255,255,0.02);
     position: sticky;
     top: 0;
@@ -574,19 +552,224 @@
     background: var(--panel);
   }
 
+  .analysis-header-main {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .analysis-kicker {
+    font: 700 12px var(--mono);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .analysis-filename {
+    margin-top: 8px;
+    font: 600 18px/1.3 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--text);
+    word-break: break-word;
+  }
+
+  .analysis-meta-text {
+    margin-top: 6px;
+    color: var(--muted);
+    font: 11px var(--mono);
+  }
+
+  .analysis-summary-short {
+    margin-top: 8px;
+    color: var(--info);
+    font: 600 12px var(--mono);
+  }
+
+  .analysis-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 7px 12px;
+    border-radius: 999px;
+    font: 700 11px var(--mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .status-badge.green { background: rgba(34,197,94,0.12); color: var(--live); }
+  .status-badge.blue { background: rgba(79,195,247,0.06); color: var(--info); }
+  .status-badge.amber { background: rgba(245,166,35,0.06); color: var(--warn); }
+  .status-badge.red { background: rgba(239,68,68,0.06); color: var(--error); }
+  .status-badge.gray { background: rgba(255,255,255,0.02); color: var(--muted); }
+
+  .analysis-executive {
+    font: 600 16px/1.7 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--text);
+    margin-top: 8px;
+  }
+
+  .coverage-pill { font: 600 12px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--muted); }
+
+  .status-summary {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 10px;
+    padding-bottom: 8px;
+  }
+
+  .status-label {
+    color: var(--muted);
+    font: 700 11px var(--mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .status-value {
+    font: 700 18px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--text);
+  }
+
+  .assessment-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 16px;
+    margin-top: 10px;
+  }
+
+  .assessment-item {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: rgba(255,255,255,0.015);
+  }
+
+  .assessment-item .label {
+    display: block;
+    color: var(--muted);
+    font: 700 10px var(--mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .assessment-item .value {
+    display: block;
+    margin-top: 6px;
+    color: var(--text);
+    font: 600 13px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  .analysis-section {
+    padding: 20px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .analysis-section:first-child { padding-top: 8px; }
+  .analysis-section:last-child { border-bottom: 0; }
+  #analysisKeyEvents { display: flex; flex-direction: column; gap: 7px; }
+  #analysisTimeline { max-height: 330px; overflow-y: auto; }
+
+  /* Findings and incidents */
+  .finding-item {
+    background: rgba(255,255,255,0.015);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-left: 4px solid rgba(255,255,255,0.12);
+    border-radius: 8px;
+    padding: 15px 14px 13px;
+    margin-bottom: 12px;
+  }
+  .finding-item .finding-title { font: 700 13px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--text); }
+  .finding-item .finding-evidence { color: var(--muted); }
+  .finding-item.recovered { border-left-color: var(--live); }
+  .finding-item.warn { border-left-color: var(--warn); }
+  .finding-item.critical { border-left-color: var(--error); }
+  .finding-label { font: 700 10px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .finding-meta { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px; }
+  .recovery-badge { display:inline-block; padding:3px 8px; border-radius:12px; font:600 11px var(--mono); color:var(--live); background: rgba(34,197,94,0.08); }
+  .recommended-action {
+    margin-top:8px;
+    padding:10px 12px;
+    border-radius:8px;
+    background: rgba(79,195,247,0.04);
+    border: 1px solid rgba(79,195,247,0.06);
+    color: var(--text);
+    font: 600 12px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  .finding-group summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 14px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.015);
+    margin-bottom: 10px;
+  }
+  .finding-group summary::-webkit-details-marker { display: none; }
+  .finding-group-title {
+    font: 700 13px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--text);
+  }
+  .finding-group-count { display:block; margin-top:4px; color:var(--muted); font:11px var(--mono); }
+  .finding-group-meta {
+    display:flex;
+    align-items:center;
+    gap:8px;
+    color: var(--muted);
+    font: 11px var(--mono);
+    flex-wrap: wrap;
+  }
+  .finding-group-details {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-top: 6px;
+  }
+
+  /* Key event highlighting */
+  .analysis-key-event {
+    padding:8px 10px;
+    border-radius:7px;
+    background: rgba(245,166,35,0.03);
+    border:1px solid rgba(245,166,35,0.05);
+    color: var(--text);
+    font: 12px/1.5 var(--mono);
+    word-break: break-word;
+  }
+  .analysis-key-event.error { background: rgba(239,68,68,0.04); border-color: rgba(239,68,68,0.06); }
+  .analysis-key-event.info { background: rgba(79,195,247,0.02); border-color: rgba(79,195,247,0.04); color: var(--info); }
+  .analysis-key-event.warn { background: rgba(245,166,35,0.03); border-color: rgba(245,166,35,0.05); color: var(--warn); }
+  .analysis-show-more {
+    margin-top: 8px;
+    color: var(--info);
+    background: transparent;
+    border: 0;
+    padding: 0;
+    font: 600 11px var(--mono);
+    cursor: pointer;
+  }
+
   /* Constrain the modal and make its content, rather than the page, scroll. */
   .analysis-body {
     display: flex;
     gap: 18px;
-    padding: 12px 18px 18px 18px;
+    padding: 18px 22px 24px;
     overflow: hidden;
     flex: 1;
     min-height: 0;
   }
   .analysis-left {
-    width: 40%;
-    flex: 0 0 40%;
-    min-width: 300px;
+    width: 42%;
+    flex: 0 0 42%;
+    min-width: 320px;
     padding-right: 16px;
     border-right: 1px solid var(--border);
     overflow-y: auto;
@@ -597,22 +780,21 @@
     padding-left: 2px;
     overflow-y: auto;
   }
-  .analysis-section {
-    padding: 14px 0;
-    border-bottom: 1px solid var(--border);
-  }
-  .analysis-section:first-child { padding-top: 4px; }
-  .analysis-section:last-child { border-bottom: 0; }
   .raw-log {
-    max-height: 320px;
+    max-height: 360px;
     overflow: auto;
     white-space: pre;
     padding: 12px;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 8px;
     background: var(--bg);
     color: var(--text);
     font: 12px/1.5 var(--mono);
+  }
+  .raw-log-subtitle {
+    margin-top: 6px;
+    color: var(--muted);
+    font: 11px var(--mono);
   }
   .timeline-item {
     display: grid;
@@ -624,7 +806,7 @@
   }
   .timeline-item > div:first-child { color: var(--muted); }
   #analysisKeyEvents { display: flex; flex-direction: column; gap: 7px; }
-  #analysisTimeline { max-height: 330px; overflow-y: auto; }
+  #analysisTimeline { max-height: 380px; overflow-y: auto; }
   #analysisRecommendation { color: var(--info); }
   .analysis-section .panel-label { color: #9aa3b2; }
   .collapsible { cursor: pointer; user-select: none; }
@@ -632,10 +814,10 @@
 
  
   .finding-item {
-    padding: 8px;
+    padding: 15px 14px 13px;
     border-radius: 6px;
     background: rgba(255,255,255,0.02);
-    margin-bottom: 8px;
+    margin-bottom: 12px;
   }
 
   .result-grid {
@@ -968,13 +1150,14 @@
 <div class="analysis-modal" id="analysisModal" role="dialog" aria-modal="true">
   <div class="analysis-card">
     <div class="analysis-header">
-      <div>
-        <div style="font:700 14px var(--mono);">LOG ANALYSIS</div>
-        <div id="analysisFilename" style="font:600 12px var(--mono); color:var(--muted);">-</div>
-        <div id="analysisSummaryShort" class="small-inline" style="margin-top:6px;"></div>
+      <div class="analysis-header-main">
+        <div class="analysis-kicker">LOG ANALYSIS</div>
+        <div id="analysisFilename" class="analysis-filename">-</div>
+        <div id="analysisSourceMeta" class="analysis-meta-text"></div>
+        <div id="analysisSummaryShort" class="analysis-summary-short"></div>
       </div>
-      <div style="display:flex;align-items:center;gap:12px;">
-        <div id="analysisBadge" class="status-badge gray" style="margin-right:6px;">UNKNOWN</div>
+      <div class="analysis-header-actions">
+        <div id="analysisBadge" class="status-badge gray">UNKNOWN</div>
         <button class="btn" id="closeAnalysisBtn">Close</button>
       </div>
     </div>
@@ -982,12 +1165,16 @@
       <div class="analysis-left">
         <div class="analysis-section">
           <div class="panel-label">EXECUTIVE SUMMARY</div>
-          <div id="analysisExecutive" style="font:600 14px var(--mono); margin-bottom:8px;"></div>
+          <div class="small-inline" style="margin:8px 0 6px; color:var(--info); letter-spacing:0.08em; text-transform:uppercase;">WHAT HAPPENED</div>
+          <div id="analysisExecutive" class="analysis-executive"></div>
         </div>
         <div class="analysis-section">
           <div class="panel-label">HEALTH / ASSESSMENT</div>
-          <div style="font:600 16px var(--mono);" id="overviewHealth">HEALTH: UNKNOWN</div>
-          <div id="overviewStats" style="margin-top:10px; color:var(--muted); font:12px var(--mono);"></div>
+          <div class="status-summary">
+            <div class="status-label">Overall status</div>
+            <div id="overviewHealth" class="status-value">UNKNOWN</div>
+          </div>
+          <div id="overviewStats" class="assessment-grid"></div>
         </div>
 
         <div class="analysis-section">
@@ -1003,7 +1190,7 @@
 
         <div class="analysis-section">
           <div class="panel-label">RECOMMENDED ACTION</div>
-          <div id="analysisRecommendation" class="small-inline recommended-action"></div>
+          <div id="analysisRecommendation" class="recommended-action"></div>
         </div>
       </div>
 
@@ -1016,13 +1203,19 @@
         <div class="analysis-section">
           <div class="panel-label">UNRECOGNIZED LINES</div>
           <div id="analysisUnrecognized" style="color:var(--muted); font:12px var(--mono);"></div>
-          <div id="analysisUnrecognizedList" class="raw-log" style="display:none; margin-top:8px; max-height:140px;"></div>
+          <div id="analysisUnrecognizedList" class="raw-log" style="display:none; margin-top:8px; max-height:180px;"></div>
           <div style="margin-top:6px;"><a id="toggleUnrec" class="collapsible small-inline">Show unrecognized lines</a></div>
         </div>
 
         <div class="analysis-section">
           <div class="panel-label">RAW LOG / ORIGINAL SOURCE</div>
-          <div id="analysisRaw" class="raw-log"></div>
+          <div class="raw-log-subtitle">Original uploaded log — not modified</div>
+          <div style="display:flex; gap:8px; align-items:center; margin-top:8px;">
+            <button class="btn" id="copyRawBtn">Copy Log</button>
+            <button class="btn" id="downloadRawBtn">Download Log</button>
+            <div class="coverage-pill" id="rawSizeMeta" style="margin-left:auto"></div>
+          </div>
+          <div id="analysisRaw" class="raw-log" style="margin-top:8px;"></div>
         </div>
       </div>
     </div>
@@ -2364,83 +2557,251 @@
     importOverlay.classList.remove('show');
     const modal = document.getElementById("analysisModal");
 
-    document.getElementById("analysisFilename").textContent =
+    const analysisFilename = document.getElementById("analysisFilename");
+    const analysisSourceMeta = document.getElementById("analysisSourceMeta");
+    const analysisSummaryShort = document.getElementById("analysisSummaryShort");
+
+    analysisFilename.textContent =
       (result?.source?.filename) ||
       result?.filename ||
       "Imported log";
 
-    document.getElementById("overviewHealth").textContent =
-      `HEALTH: ${health.status || "UNKNOWN"}`;
-    document.getElementById("overviewHealth").style.color =
-      health.status === "HEALTHY"
-        ? "var(--live)"
-        : health.status === "CRITICAL"
-          ? "var(--error)"
-          : health.status === "WARNING" || health.status === "RECOVERING"
-            ? "var(--warn)"
-            : "var(--muted)";
+    const sourceClass = result?.source?.source_class || result?.source_class || result?.source?.type || "";
+    const humanSource = String(sourceClass || "")
+      .replace(/[_-]+/g, " ")
+      .replace(/\b\w/g, ch => ch.toUpperCase())
+      .trim();
+    const mappedSource =
+      humanSource === "App" ? "Application" :
+      humanSource === "Device" ? "Device" :
+      humanSource === "Bluetooth System" ? "Bluetooth System" :
+      humanSource === "Wifi System" ? "Wi-Fi System" :
+      humanSource === "Android System" ? "Android System" :
+      humanSource === "Vendor System" ? "Vendor System" :
+      humanSource === "Unknown" ? "Unknown" :
+      humanSource;
+    analysisSourceMeta.textContent = mappedSource ? `Source: ${mappedSource}` : "";
+    if (!mappedSource) analysisSourceMeta.style.display = 'none';
+    else analysisSourceMeta.style.display = 'block';
 
-    document.getElementById("overviewStats").innerHTML =
-      `${stats.lines_total ?? 0} lines &nbsp;&nbsp; ${stats.events_parsed ?? 0} parsed &nbsp;&nbsp; ${stats.unrecognized_lines ?? 0} unrecognized &nbsp;&nbsp; ${(result?.findings || []).length} findings`;
-    document.getElementById("overviewStats").innerHTML =
-      `${stats.lines_total ?? 0} lines &nbsp;&nbsp; ${stats.events_parsed ?? 0} parsed &nbsp;&nbsp; ${stats.unrecognized_lines ?? 0} unrecognized &nbsp;&nbsp; ${(result?.findings || []).length} findings`;
+    const totalLines = Number(stats.lines_total ?? result?.lines_total ?? 0);
+    const parsedLines = Number(stats.events_parsed ?? result?.events_parsed ?? 0);
+    const unrecognizedLines = Number(stats.unrecognized_lines ?? result?.unrecognized_lines ?? 0);
+    const interpretedCount = Math.max(0, parsedLines || (totalLines - unrecognizedLines));
+    if (totalLines > 0 && interpretedCount > 0) {
+      analysisSummaryShort.textContent = `${interpretedCount} of ${totalLines} lines interpreted`;
+    } else if (parsedLines > 0) {
+      analysisSummaryShort.textContent = `${parsedLines} lines interpreted`;
+    } else {
+      analysisSummaryShort.textContent = "Analysis available";
+    }
 
-    // Findings / Incidents
-    const findingsDiv = document.getElementById("analysisFindings");
-    findingsDiv.innerHTML = "";
-    // Prefer structured report (incidents) when available, otherwise
-    // display correlated incidents, and finally fall back to raw findings.
+    const summaryStatus = (health.status || "UNKNOWN").toUpperCase();
     const incidents = result?.report && result.report.length
       ? result.report
       : (result?.incidents && result.incidents.length
         ? result.incidents
         : (result?.findings || []));
+
+    document.getElementById("overviewHealth").textContent = summaryStatus;
+    document.getElementById("overviewHealth").style.color =
+      summaryStatus === "HEALTHY"
+        ? "var(--live)"
+        : summaryStatus === "CRITICAL"
+          ? "var(--error)"
+          : summaryStatus === "WARNING" || summaryStatus === "RECOVERING" || summaryStatus === "LIMITED ANALYSIS"
+            ? "var(--warn)"
+            : "var(--muted)";
+
+    const formatValues = [
+      ...(Array.isArray(result?.detected_formats) ? result.detected_formats : []),
+      ...(Array.isArray(stats?.detected_formats) ? stats.detected_formats : []),
+      ...(Array.isArray(stats?.formats) ? stats.formats : []),
+      ...(result?.detected_format ? [result.detected_format] : []),
+      ...(result?.parse_format ? [result.parse_format] : []),
+      ...(result?.format ? [result.format] : []),
+      ...(result?.events || []).map(event => event.parse_format || event.format || event.metadata?.parse_format || event.metadata?.format).filter(Boolean)
+    ].flatMap(value => Array.isArray(value) ? value : [value])
+      .map(value => typeof value === 'string' ? value : value?.name || value?.format || value?.type || '')
+      .map(value => String(value).trim())
+      .filter(Boolean)
+      .filter((value, index, values) => values.indexOf(value) === index);
+    const formatLabels = formatValues.map(value => value.toLowerCase() === 'logcat' ? 'Logcat' : value);
+    const formatSummary = formatLabels.length ? formatLabels.join(' · ') : 'Format information unavailable';
+
+    const metricItems = [
+      { label: 'Overall status', value: summaryStatus },
+      { label: 'Analysis completeness', value: totalLines > 0 ? `${Math.max(0, Math.round((interpretedCount / totalLines) * 100))}% interpreted` : 'Unavailable' },
+      { label: 'Total lines', value: totalLines || '0' },
+      { label: 'Parsed lines', value: parsedLines || '0' },
+      { label: 'Unrecognized lines', value: unrecognizedLines || '0' },
+      { label: 'Findings', value: (incidents || []).length || '0' },
+      { label: 'Finding status', value: (incidents || []).length ? `${incidents.filter(item => item.recovered || /recovered|restored|resolved|reconnected|success/i.test((item.status || item.title || item.what_happened || '').toString())).length} recovered · ${(incidents || []).filter(item => !(item.recovered || /recovered|restored|resolved|reconnected|success/i.test((item.status || item.title || item.what_happened || '').toString()))).length} active` : 'No findings' },
+      { label: 'Detected formats', value: formatSummary }
+    ];
+    const overviewStats = document.getElementById("overviewStats");
+    overviewStats.innerHTML = metricItems.map(item => `
+      <div class="assessment-item">
+        <span class="label">${item.label}</span>
+        <span class="value">${item.value}</span>
+      </div>
+    `).join('');
+
+    // Findings / Incidents
+    const findingsDiv = document.getElementById("analysisFindings");
+    findingsDiv.innerHTML = "";
     if (!incidents || incidents.length === 0) {
       document.getElementById('analysisNoIncidents').style.display = 'block';
     } else {
       document.getElementById('analysisNoIncidents').style.display = 'none';
-      incidents.forEach(i => {
-        const item = document.createElement('div');
-        item.className = 'finding-item';
-        const title = document.createElement('div'); title.style.font = '700 12px var(--mono)'; title.textContent = i.title || i.category || 'Incident';
-        const severity = (i.severity || '').toUpperCase();
-        if (severity === 'CRITICAL') item.style.borderLeft = '4px solid var(--error)';
-        else if (severity === 'WARNING' || severity === 'WARN') item.style.borderLeft = '4px solid var(--warn)';
-        else item.style.borderLeft = '4px solid rgba(255,255,255,0.03)';
-        const expl = document.createElement('div'); expl.style.color = 'var(--muted)'; expl.style.font = '12px var(--mono)'; expl.textContent = i.what_happened || i.title || '';
-        const evidence = document.createElement('div'); evidence.style.marginTop = '6px'; evidence.style.color = 'var(--muted)'; evidence.style.font = '12px var(--mono)'; evidence.textContent = (i.evidence && i.evidence.join) ? i.evidence.join('; ') : (i.evidence || '');
-        const rec = document.createElement('div'); rec.className = 'small-inline'; rec.style.marginTop='6px'; rec.textContent = i.recovered ? 'Recovered' : (i.status || ''); rec.style.color = i.recovered ? 'var(--live)' : 'var(--muted)';
-        const action = document.createElement('div'); action.className='small-inline'; action.style.marginTop='6px'; action.textContent = i.recommended_action || i.recommendation || '';
-        item.appendChild(title);
-        if (expl.textContent) item.appendChild(expl);
-        if (evidence.textContent) { const evLabel = document.createElement('div'); evLabel.style.font = '600 11px var(--mono)'; evLabel.textContent = 'Evidence:'; item.appendChild(evLabel); item.appendChild(evidence); }
-        if (action.textContent) { const actLabel = document.createElement('div'); actLabel.style.font='600 11px var(--mono)'; actLabel.textContent='Recommended action:'; item.appendChild(actLabel); item.appendChild(action); }
-        item.appendChild(rec);
-        findingsDiv.appendChild(item);
+      const isRecovered = item => item.recovered || /recovered|restored|resolved|reconnected|success/i.test((item.status || item.title || item.what_happened || '').toString());
+      const displayTitle = title => {
+        const text = String(title || 'Incident').trim();
+        return text.length && !text.toLowerCase().endsWith('s') ? `${text}s` : text;
+      };
+      const readableValue = value => {
+        if (value === null || value === undefined) return '';
+        if (typeof value === 'string') return value;
+        if (Array.isArray(value)) return value.map(readableValue).filter(Boolean).join('; ');
+        if (typeof value === 'object') {
+          const preferred = ['text', 'message', 'description', 'summary', 'detail', 'what_happened'];
+          for (const key of preferred) {
+            const text = readableValue(value[key]);
+            if (text) return text;
+          }
+          return '';
+        }
+        return '';
+      };
+      const impactText = item => {
+        const suppliedImpact = readableValue(item.impact);
+        if (suppliedImpact) return suppliedImpact;
+        return '';
+      };
+      const grouped = new Map();
+      incidents.forEach(item => {
+        const key = ((item.category || item.title || item.type || 'incident') + '').trim().toLowerCase();
+        if (!grouped.has(key)) {
+          grouped.set(key, {
+            title: item.title || item.category || 'Incident',
+            items: []
+          });
+        }
+        grouped.get(key).items.push(item);
+      });
+
+      grouped.forEach((group, key) => {
+        const useGroup = group.items.length > 1;
+        const container = document.createElement(useGroup ? 'details' : 'div');
+        if (useGroup) container.open = false;
+        container.className = useGroup ? 'finding-group' : 'finding-item';
+        if (useGroup) {
+          const summary = document.createElement('summary');
+          const recoveredCount = group.items.filter(isRecovered).length;
+          const activeCount = group.items.length - recoveredCount;
+          summary.innerHTML = `
+            <span>
+              <span class="finding-group-title">${displayTitle(group.title)}</span>
+              <span class="finding-group-count">${group.items.length} occurrence${group.items.length === 1 ? '' : 's'}</span>
+            </span>
+            <span class="finding-group-meta">
+              ${recoveredCount ? `<span>${recoveredCount} recovered</span>` : ''}
+              ${activeCount ? `<span>${activeCount} active</span>` : ''}
+            </span>
+          `;
+          const detailsWrap = document.createElement('div');
+          detailsWrap.className = 'finding-group-details';
+          group.items.forEach(i => {
+            const item = document.createElement('div');
+            item.className = 'finding-item';
+            const severity = (i.severity || '').toUpperCase();
+            item.classList.toggle('critical', severity === 'CRITICAL');
+            item.classList.toggle('warn', severity === 'WARNING' || severity === 'WARN');
+            item.classList.toggle('recovered', !!i.recovered);
+            const title = document.createElement('div'); title.className = 'finding-title'; title.textContent = i.title || i.category || 'Incident';
+            const expl = document.createElement('div'); expl.className = 'finding-evidence'; expl.style.marginTop = '6px'; expl.textContent = i.what_happened || i.title || '';
+            const evidence = document.createElement('div'); evidence.className = 'finding-evidence'; evidence.style.marginTop = '6px'; evidence.textContent = (i.evidence && i.evidence.join) ? i.evidence.join('; ') : (i.evidence || '');
+            const impact = document.createElement('div'); impact.className = 'finding-evidence'; impact.style.marginTop = '8px';
+            const impactValue = impactText(i);
+            if (impactValue) {
+              const label = document.createElement('span'); label.className = 'finding-label'; label.textContent = 'Impact:';
+              impact.appendChild(label); impact.appendChild(document.createElement('br')); impact.appendChild(document.createTextNode(impactValue));
+            }
+            const meta = document.createElement('div'); meta.className = 'finding-meta';
+            const statusText = document.createElement('span'); statusText.className = 'finding-label'; statusText.textContent = isRecovered(i) ? 'Status: Recovered' : (i.status || 'Status: Active');
+            meta.appendChild(statusText);
+            const action = document.createElement('div'); action.className = 'recommended-action'; action.textContent = i.recommended_action || i.recommendation || 'No specific recommendation provided.';
+            item.appendChild(title);
+            if (expl.textContent) item.appendChild(expl);
+            if (evidence.textContent) item.appendChild(evidence);
+            if (impactValue) item.appendChild(impact);
+            item.appendChild(meta);
+            item.appendChild(action);
+            detailsWrap.appendChild(item);
+          });
+          container.appendChild(summary);
+          container.appendChild(detailsWrap);
+        } else {
+          const i = group.items[0];
+          const item = document.createElement('div');
+          item.className = 'finding-item';
+          const severity = (i.severity || '').toUpperCase();
+          item.classList.toggle('critical', severity === 'CRITICAL');
+          item.classList.toggle('warn', severity === 'WARNING' || severity === 'WARN');
+          item.classList.toggle('recovered', !!i.recovered);
+          const title = document.createElement('div'); title.className = 'finding-title'; title.textContent = i.title || i.category || 'Incident';
+          const expl = document.createElement('div'); expl.className = 'finding-evidence'; expl.style.marginTop = '6px'; expl.textContent = i.what_happened || i.title || '';
+          const evidence = document.createElement('div'); evidence.className = 'finding-evidence'; evidence.style.marginTop = '6px'; evidence.textContent = (i.evidence && i.evidence.join) ? i.evidence.join('; ') : (i.evidence || '');
+          const impact = document.createElement('div'); impact.className = 'finding-evidence'; impact.style.marginTop = '8px';
+          const impactValue = impactText(i);
+          if (impactValue) {
+            const label = document.createElement('span'); label.className = 'finding-label'; label.textContent = 'Impact:';
+            impact.appendChild(label); impact.appendChild(document.createElement('br')); impact.appendChild(document.createTextNode(impactValue));
+          }
+          const meta = document.createElement('div'); meta.className = 'finding-meta';
+          const state = document.createElement('span'); state.className = 'finding-label'; state.textContent = isRecovered(i) ? 'Status: Recovered' : (i.status || 'Status: Active');
+          meta.appendChild(state);
+          const action = document.createElement('div'); action.className = 'recommended-action'; action.textContent = i.recommended_action || i.recommendation || 'No specific recommendation provided.';
+          item.appendChild(title);
+          if (expl.textContent) item.appendChild(expl);
+          if (evidence.textContent) item.appendChild(evidence);
+          if (impactValue) item.appendChild(impact);
+          item.appendChild(meta);
+          item.appendChild(action);
+          container.appendChild(item);
+        }
+        findingsDiv.appendChild(container);
       });
     }
-
 
     // Timeline (chronological) and Key Events
     const timeline = document.getElementById('analysisTimeline');
     timeline.innerHTML = '';
-    const keyHost = document.getElementById('analysisKeyEvents'); keyHost.innerHTML = '';
-    const evs = (result?.events || []).slice().filter(e=>e.timestamp).sort((a,b)=> new Date(a.timestamp) - new Date(b.timestamp));
-    evs.forEach(ev => {
-      const row = document.createElement('div'); row.className = 'timeline-item';
-      const ts = document.createElement('div'); ts.style.font = '600 12px var(--mono)'; ts.style.color = 'var(--dim)'; ts.textContent = ev.timestamp || '';
-      const line = document.createElement('div'); line.style.marginTop = '4px'; line.textContent = `${ev.level || 'INFO'}  ${ev.message || ''}`;
-      row.appendChild(ts); row.appendChild(line);
-      timeline.appendChild(row);
-    });
+    const keyHost = document.getElementById('analysisKeyEvents');
+    keyHost.innerHTML = '';
+    const evs = (result?.events || []).slice().filter(e => e.timestamp).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    if (evs.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'small-inline';
+      empty.style.color = 'var(--muted)';
+      empty.textContent = 'No timeline events are available for this log.';
+      timeline.appendChild(empty);
+    } else {
+      evs.forEach(ev => {
+        const row = document.createElement('div'); row.className = 'timeline-item';
+        const ts = document.createElement('div'); ts.style.font = '600 12px var(--mono)'; ts.style.color = 'var(--dim)'; ts.textContent = ev.timestamp || '';
+        const line = document.createElement('div'); line.style.marginTop = '4px'; line.textContent = `${ev.level || 'INFO'}  ${ev.message || ''}`;
+        row.appendChild(ts); row.appendChild(line);
+        timeline.appendChild(row);
+      });
+    }
 
-    // Key Events must not inherit the timeline's timestamp filter: imported
-    // logs may contain valid reboot evidence without source timestamps.
     const keyEvents = result?.events || [];
     let previousUptime = null;
     let rebootResetSeen = false;
+    const keyMatches = [];
     keyEvents.forEach(ev => {
-      const L = (ev.level||'').toUpperCase();
+      const L = (ev.level || '').toUpperCase();
       const message = ev.message || '';
       const uptimeMatch = message.match(/uptime\s*=\s*(\d+(?:\.\d+)?)\s*s?\b/i);
       const uptime = uptimeMatch ? Number(uptimeMatch[1]) : null;
@@ -2451,52 +2812,111 @@
       const keyTerms = /timeout|disconnect|reconnect|reboot|restart|reset|recover|complet|verif/;
       const isPostResetStart = rebootResetSeen && /\bstarted\b/i.test(message);
       if (['WARN','WARNING','ERROR','CRITICAL'].includes(L) || keyTerms.test(message) || isUptimeReset || isPostResetStart) {
-        const k = document.createElement('div'); k.className='analysis-key-event';
-        if (L.startsWith('ERROR') || L === 'CRITICAL') k.classList.add('error');
-        else if (L.startsWith('WARN')) k.classList.add('warn');
-        else k.classList.add('info');
-        k.textContent = `${ev.timestamp || ''} ${L || 'INFO'} ${message}`.trim();
-        keyHost.appendChild(k);
+        keyMatches.push({ ...ev, level: L || 'INFO' });
       }
     });
 
-    // Unrecognized lines and toggle
+    const displayedKeys = keyMatches.slice(0, 8);
+    displayedKeys.forEach(ev => {
+      const k = document.createElement('div'); k.className='analysis-key-event';
+      const level = (ev.level || 'INFO').toUpperCase();
+      if (level.startsWith('ERROR') || level === 'CRITICAL') k.classList.add('error');
+      else if (level.startsWith('WARN')) k.classList.add('warn');
+      else k.classList.add('info');
+      k.textContent = `${ev.timestamp || ''} ${level || 'INFO'} ${ev.message || ''}`.trim();
+      keyHost.appendChild(k);
+    });
+    if (keyMatches.length > displayedKeys.length) {
+      const showMore = document.createElement('button');
+      showMore.className = 'analysis-show-more';
+      showMore.textContent = 'Show all key events';
+      showMore.onclick = () => {
+        keyHost.innerHTML = '';
+        keyMatches.forEach(ev => {
+          const k = document.createElement('div'); k.className='analysis-key-event';
+          const level = (ev.level || 'INFO').toUpperCase();
+          if (level.startsWith('ERROR') || level === 'CRITICAL') k.classList.add('error');
+          else if (level.startsWith('WARN')) k.classList.add('warn');
+          else k.classList.add('info');
+          k.textContent = `${ev.timestamp || ''} ${level || 'INFO'} ${ev.message || ''}`.trim();
+          keyHost.appendChild(k);
+        });
+        showMore.remove();
+      };
+      keyHost.appendChild(showMore);
+    }
+
     const unrec = document.getElementById('analysisUnrecognized');
     unrec.innerHTML = '';
-    const unrecCount = result.statistics?.unrecognized_lines ?? result.unrecognized_lines ?? 0;
-    unrec.textContent = `${unrecCount} unrecognized lines`;
+    const unrecCount = Number(result?.statistics?.unrecognized_lines ?? result?.unrecognized_lines ?? 0);
+    if (unrecCount > 0) {
+      unrec.textContent = `${unrecCount} lines could not be interpreted.`;
+    } else {
+      unrec.textContent = 'No unrecognized lines.';
+    }
     const unrecList = document.getElementById('analysisUnrecognizedList');
     if (unrecCount > 0 && result.raw_lines) {
       const eventMsgs = new Set((result.events || []).map(e => (e.raw || e.message || '').trim()));
       const lines = result.raw_lines.filter(l => !eventMsgs.has((l || '').replace(/[\r\n]+$/, '').trim()));
-      unrecList.textContent = lines.slice(0,200).join('');
+      unrecList.textContent = lines.slice(0, 200).join('');
+      if (lines.length > 0) {
+        unrecList.style.display = 'none';
+      } else {
+        unrecList.style.display = 'none';
+      }
     } else {
       unrecList.textContent = '';
+      unrecList.style.display = 'none';
     }
-    document.getElementById('toggleUnrec').onclick = ()=>{
+    document.getElementById('toggleUnrec').onclick = () => {
       const el = document.getElementById('analysisUnrecognizedList');
       if (el.style.display === 'block') { el.style.display='none'; document.getElementById('toggleUnrec').textContent='Show unrecognized lines'; }
       else { el.style.display='block'; document.getElementById('toggleUnrec').textContent='Hide unrecognized lines'; }
     };
 
-    // Raw log
     const raw = document.getElementById('analysisRaw');
     raw.textContent = (result.raw_lines || []).join('');
-    // Health explanation / Executive summary / Recommendation
-    const explEl = document.getElementById('analysisExplanation');
-    if (explEl) explEl.textContent = result.health_explanation || "";
+    const rawSizeMeta = document.getElementById('rawSizeMeta');
+    const rawText = (result.raw_lines || []).join('');
+    rawSizeMeta.textContent = rawText ? `${rawText.length} bytes` : '';
+
+    // Copy / Download buttons for raw log (client-side only)
+    const copyBtn = document.getElementById('copyRawBtn');
+    const dlBtn = document.getElementById('downloadRawBtn');
+    if (copyBtn) {
+      copyBtn.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(rawText);
+          copyBtn.textContent = 'Copied';
+          setTimeout(() => copyBtn.textContent = 'Copy Log', 1500);
+        } catch (e) {
+          copyBtn.textContent = 'Copy failed';
+          setTimeout(() => copyBtn.textContent = 'Copy Log', 1500);
+        }
+      };
+    }
+    if (dlBtn) {
+      dlBtn.onclick = () => {
+        const blob = new Blob([rawText], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = (result?.source?.filename) || result?.filename || 'imported-log.txt';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      };
+    }
 
     const execEl = document.getElementById('analysisExecutive');
     const summaryText = result.analysis_summary || result.executive_summary || "";
     const recommendationMarker = 'Recommended action:';
     const markerIndex = summaryText.indexOf(recommendationMarker);
-    execEl.textContent = markerIndex >= 0
-      ? summaryText.slice(0, markerIndex).trim()
-      : summaryText;
+    execEl.textContent = result.what_happened || result.analysis?.what_happened ||
+      (markerIndex >= 0 ? summaryText.slice(0, markerIndex).trim() : summaryText);
 
     const recEl = document.getElementById('analysisRecommendation');
-    // Preferred source for recommendation: 1) report[0].recommended_action
-    // 2) findings[0].recommended_action 3) other specific recommendation fields
     let recText = '';
     if (result.report && result.report.length && result.report[0].recommended_action) {
       recText = result.report[0].recommended_action;
@@ -2508,13 +2928,14 @@
     if (!recText && markerIndex >= 0) {
       recText = summaryText.slice(markerIndex + recommendationMarker.length).trim();
     }
-    if (!recText) recText = 'No specific recommendation provided.';
+    if (!recText && unrecognizedLines > 0) {
+      recText = 'Some log lines could not be interpreted. Review the unrecognized lines if more detail is needed.';
+    }
+    if (!recText) recText = 'No immediate action required. Continue normal operation.';
     recEl.textContent = recText;
 
-    // Badge for health status — make HEALTHY+recovered prominent
     const badge = document.getElementById('analysisBadge');
-    const h = result.health || {};
-    const st = (h.status || 'UNKNOWN').toUpperCase();
+    const st = (health.status || 'UNKNOWN').toUpperCase();
     let badgeText = st;
     if (st === 'HEALTHY' && (result.health_explanation || (result.notable_events && result.notable_events.length))) {
       badgeText = 'HEALTHY — RECOVERED';
@@ -2522,7 +2943,7 @@
     badge.textContent = badgeText;
     badge.className = 'status-badge gray';
     if (st === 'HEALTHY') badge.classList.add('green');
-    else if (st === 'RECOVERING' || st === 'WARNING') badge.classList.add('amber');
+    else if (st === 'RECOVERING' || st === 'WARNING' || st === 'LIMITED ANALYSIS') badge.classList.add('amber');
     else if (st === 'CRITICAL') badge.classList.add('red');
     else badge.classList.add('gray');
 

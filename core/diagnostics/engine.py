@@ -199,21 +199,46 @@ class DiagnosticEngine:
         ]
 
     def process(self, event, metrics=None):
+        # Respect source classification gating: only allow diagnostics to
+        # consider events that are from device/app sources or explicitly
+        # enabled by profile. The FileAnalysisService will not forward
+        # wholly-unparsed raw lines.
+        src = event.get("source_class") or (event.get("metadata") or {}).get("source_class")
+        # Default conservative behavior: only APP/DEVICE are eligible
+        eligible_sources = {"APP", "DEVICE"}
+        profile = getattr(self, "profile", None)
+        if profile and isinstance(profile, dict):
+            allowed = profile.get("relevant_sources")
+            if isinstance(allowed, (list, tuple, set)):
+                eligible_sources.update(allowed)
+
+        # Attach event and metrics regardless; gating is checked before rules evaluate
         self.events.append(event)
         self.events = self.events[-self.event_window :]
         self.metrics.extend(metrics or [])
         self.metrics = self.metrics[-self.metric_window :]
 
         new_findings = []
-        if self._is_disconnect(event):
+        # If event source is not eligible, skip stateful connection handling
+        if src and src not in eligible_sources:
+            # If a legacy parser was explicitly provided by the analysis
+            # service, allow legacy behavior to drive connectivity diagnostics
+            # (backwards-compatible). Otherwise skip device-level gating.
+            if getattr(self, "_allow_legacy_parser", False):
+                pass
+            else:
+                # still run non-device rules that depend on metrics (e.g., uptime)
+                pass
+        allow_legacy = getattr(self, '_allow_legacy_parser', False)
+        if self._is_disconnect(event) and (not src or src in eligible_sources or allow_legacy):
             self._connection_recovery_count = 0
             new_finding = self._record_connection_disconnect()
             if new_finding is not None:
                 new_findings.append(new_finding)
-        elif self._is_connected(event):
+        elif self._is_connected(event) and (not src or src in eligible_sources or allow_legacy):
             self._connection_recovery_count = 0
             self._mark_connection_recovering()
-        elif self._is_valid_telemetry(event):
+        elif self._is_valid_telemetry(event) and (not src or src in eligible_sources or allow_legacy):
             self._advance_connection_recovery()
 
         for rule in self.rules:

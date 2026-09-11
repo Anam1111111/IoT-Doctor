@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 
 from core.diagnostics import DiagnosticEngine
+from core.analysis_summary import build_analysis_interpretation
 from core.health.monitor import HealthMonitor
 from core.ingestion.file_reader import FileReader
 from core.metrics import MetricExtractor
@@ -27,6 +28,8 @@ class FileAnalysisService:
         )
         extractor = MetricExtractor(self.profile.get("metrics"))
         diagnostics = DiagnosticEngine(historical_mode=True)
+        # Allow diagnostics to be aware whether this service was provided an explicit parser
+        diagnostics._allow_legacy_parser = True if getattr(self, '_explicit_parser_provided', False) else False
         health = HealthMonitor()
         events = []
         metrics = []
@@ -52,24 +55,42 @@ class FileAnalysisService:
         if self.profile.get("parser"):
             preferred_parser_name = self.profile.get("parser")
 
+        # Read all lines first (FileReader enforces upload limits). Then apply multiline coalescing.
+        all_lines = []
         for raw_line in FileReader(path, self.max_bytes).lines():
             lines_total += 1
-            line = raw_line.rstrip("\r\n")
+            all_lines.append(raw_line)
             raw_lines.append(raw_line)
-            if not line:
-                continue
+
+        from core.parser.multiline import coalesce
+        groups = coalesce([l.rstrip("\r\n") for l in all_lines])
+
+        # Large-file safety defaults (can be overridden by profile)
+        max_return_events = int(self.profile.get("max_return_events", 10000))
+        max_return_raw_lines = int(self.profile.get("max_return_raw_lines", 20000))
+        max_key_events = int(self.profile.get("max_key_events", 200))
+        omitted_counts = {"events": 0, "raw_lines": 0, "key_events": 0}
+
+        if len(groups) > max_return_events:
+            omitted_counts["events"] = len(groups) - max_return_events
+            groups = groups[:max_return_events]
+        if len(raw_lines) > max_return_raw_lines:
+            omitted_counts["raw_lines"] = len(raw_lines) - max_return_raw_lines
+            raw_lines = raw_lines[:max_return_raw_lines]
+
+        # Now iterate grouped events (each group is one or more raw lines)
+        for group in groups:
+            line = "\n".join(group)
+            raw_lines_for_event = group
             # Detect best parser
             parsed = None
             structured = False
             parse_result = None
             try:
-                # prefer explicit profile parser, then provided self.parser,
-                # then fall back to detector-registered parsers
                 parser = None
                 if preferred_parser_name:
                     parser = parser_registry.get(preferred_parser_name)
                 if not parser:
-                    # use the parser instance passed into the service (profile-specific)
                     parser = getattr(self, 'parser', None)
                 if not parser:
                     candidates = detector.detect_format(line)
@@ -77,10 +98,7 @@ class FileAnalysisService:
                         parser = parser_registry.get(candidates[0][0])
 
                 if parser:
-                    parse_result = parser.parse([line])
-                    # Backwards-compat: some parsers still accept a single string
-                    # and return a legacy dict. If list-based parse returned
-                    # nothing, try the string-based legacy call.
+                    parse_result = parser.parse(group)
                     if parse_result is None:
                         try:
                             legacy = parser.parse(line)
@@ -93,13 +111,11 @@ class FileAnalysisService:
                 parse_result = None
 
             if parse_result is None:
-                # Attempt generic timestamped-line parse (legacy fallback)
                 import re
 
                 m = re.match(generic_ts_re, line)
                 if m:
                     parsed = {k: v for k, v in m.groupdict().items() if v is not None}
-                    # Validate parsed timestamp
                     ts = parsed.get("timestamp")
                     if ts:
                         from datetime import datetime as _dt
@@ -113,50 +129,36 @@ class FileAnalysisService:
                     structured = True
                     parse_result = None
                 else:
-                        # Unrecognized; low-confidence. However, if configured metrics
-                        # can be extracted from this raw line (e.g., uptime), treat
-                        # it as structured for the purpose of metrics/diagnostics.
-                        parsed = {"message": line, "raw": line, "level": "UNKNOWN"}
-                        # Attempt metric extraction via normalizer to see if the
-                        # line contains diagnostically-relevant information.
-                        try:
-                            temp_event = normalizer.normalize(
-                                parsed,
-                                raw=line,
-                                transport_metadata={
-                                    "transport": "file",
-                                    "source": "file",
-                                    "filename": filename,
-                                },
-                                event_type=self._event_type(parsed),
-                            )
-                            temp_metrics = extractor.extract(temp_event)
-                        except Exception:
-                            temp_metrics = []
+                    parsed = {"message": line, "raw": line, "level": "UNKNOWN"}
+                    try:
+                        temp_event = normalizer.normalize(
+                            parsed,
+                            raw=line,
+                            transport_metadata={
+                                "transport": "file",
+                                "source": "file",
+                                "filename": filename,
+                            },
+                            event_type=self._event_type(parsed),
+                        )
+                        temp_metrics = extractor.extract(temp_event)
+                    except Exception:
+                        temp_metrics = []
 
-                        if temp_metrics:
-                            structured = True
-                        else:
-                            # Compatibility: if a parser instance was explicitly
-                            # provided to the service (legacy/profile usage), and
-                            # the raw line contains clear connection keywords,
-                            # allow it to be considered structured for connectivity
-                            # diagnostics only. This preserves legacy behavior
-                            # while still preventing wholly unparsed/raw Android
-                            # noise from triggering diagnostics in auto-detect mode.
-                            if self._explicit_parser_provided:
-                                low = line.lower()
-                                if any(k in low for k in ("disconnected", "reconnect", "retry", "connected")):
-                                    structured = True
-                                else:
-                                    unrecognized_lines += 1
+                    if temp_metrics:
+                        structured = True
+                    else:
+                        if getattr(self, '_explicit_parser_provided', False):
+                            low = line.lower()
+                            if any(k in low for k in ("disconnected", "reconnect", "retry", "connected")):
+                                structured = True
                             else:
                                 unrecognized_lines += 1
+                        else:
+                            unrecognized_lines += 1
                         parse_result = None
 
-            # Build canonical event and only run diagnostics when parse confidence is sufficient
             if parse_result:
-                # Map ParseResult.fields through normalizer
                 event = normalizer.normalize(
                     parse_result.fields,
                     raw=line,
@@ -168,21 +170,18 @@ class FileAnalysisService:
                     event_type=self._event_type(parse_result.fields),
                 )
                 parsed_lines += 1
-                # Attach parse metadata
                 event["parse_format"] = parse_result.format
                 event["parse_confidence"] = parse_result.confidence
-                event["raw_lines"] = parse_result.raw_lines
+                event["raw_lines"] = parse_result.raw_lines or raw_lines_for_event
 
                 try:
                     event_metrics = extractor.extract(event)
-                    # Gate diagnostics: only process if confidence >= 0.5 or profile forces
                     force_diag = bool(self.profile.get("allow_unparsed_diagnostics", False))
                     if parse_result.confidence >= 0.5 or force_diag:
                         diagnostics.process(event, event_metrics)
                 except Exception:
                     event_metrics = []
             else:
-                # Unstructured event; normalize for UI but do NOT run diagnostics
                 event = normalizer.normalize(
                     parsed,
                     raw=line,
@@ -193,15 +192,12 @@ class FileAnalysisService:
                     },
                     event_type=self._event_type(parsed),
                 )
-                # Extract metrics for display; do not run diagnostics for wholly unparsed/raw lines
                 try:
                     event_metrics = extractor.extract(event)
                 except Exception:
                     event_metrics = []
-                # Count as parsed for health only if it was structured (generic timestamp parse)
                 if structured:
                     parsed_lines += 1
-                    # For structured generic parses, it's safe to run diagnostics
                     try:
                         diagnostics.process(event, event_metrics)
                     except Exception:
@@ -215,6 +211,17 @@ class FileAnalysisService:
                 metrics=event_metrics,
                 findings=diagnostics.all_findings(),
                 connection_state=None,
+            )
+
+        # Report omitted counts in statistics
+        coverage = (parsed_lines / lines_total) if lines_total else 0
+        analysis_status = None
+        analysis_explanation = None
+        min_coverage = float(self.profile.get("min_parse_coverage", 0.5))
+        if coverage < min_coverage:
+            analysis_status = "LIMITED_ANALYSIS"
+            analysis_explanation = (
+                f"Only {parsed_lines} of {lines_total} lines were parsed ({coverage:.0%}); analysis may be incomplete."
             )
 
 
@@ -391,6 +398,7 @@ class FileAnalysisService:
                     "severity": f.severity,
                     "evidence": f.evidence,
                     "status": getattr(f, "status", "INCIDENT"),
+                    "recommended_action": getattr(f, "recommended_action", None),
                     "start_time": start_time,
                     "end_time": end_time,
                     "duration": duration,
@@ -453,12 +461,15 @@ class FileAnalysisService:
             first_msg = (related[0].get("message") or "").lower()
             if "command" in first_msg and "ack" in first_msg or "command acknowledgement" in first_msg:
                 title_text = "Command acknowledgement timeout recovered"
+                recommendation_text = "Check endpoint responsiveness and investigate repeated acknowledgement timeouts."
             elif "sensor" in first_msg or "sensor" in first_msg.split():
                 title_text = "Sensor response timeout recovered"
+                recommendation_text = "Investigate sensor responsiveness and read/response timing; monitor sensor endpoints for repeated timeouts."
             else:
                 # Preserve as a generic timeout but echo the observed phrase
                 observed = related[0].get("message") or "timeout"
                 title_text = f"Timeout recovered: {observed}"
+                recommendation_text = "Check endpoint responsiveness and investigate repeated timeouts for the affected subsystem."
 
             incidents.append(
                 {
@@ -471,6 +482,7 @@ class FileAnalysisService:
                         f"Recovery observed: {related[-1].get('message')}."
                     ),
                     "status": "RESOLVED",
+                    "recommended_action": recommendation_text,
                     "start_time": start_time,
                     "end_time": end_time,
                     "duration": duration,
@@ -523,14 +535,6 @@ class FileAnalysisService:
                     f"{'; '.join(parts)}{cat_text}. The conditions recovered and no persistent failure pattern was detected."
                 )
 
-        # Executive summary: one-line headline + short sentence
-        executive_summary = None
-        if health_explanation:
-            executive_summary = (
-                ("WARNING observed" if health_data.get("status") != "HEALTHY" else "No persistent failures detected")
-                + ": " + health_explanation
-            )
-
         # Adjust health for file-imported analysis: don't mark CRITICAL solely because the
         # file shows no live connection evidence. If the monitor reported CRITICAL due
         # to not connected, prefer diagnostic findings' severities for the file import.
@@ -556,42 +560,20 @@ class FileAnalysisService:
                 health_data["reason"] = "Insufficient connection evidence in imported log"
                 health_data["connection_state"] = "UNKNOWN"
 
-        # Build a human-readable analysis summary regardless of whether
-        # correlated incidents exist, so the UI always has something to show.
-        parts = []
-        # Count only actual warning/error notable events (levels WARN/ERROR)
-        warning_error_events = [ev for ev in notable_events if (ev.get("level") or "").upper() in ("WARN", "WARNING", "ERROR")]
-        if warning_error_events:
-            parts.append(f"{len(warning_error_events)} notable warning/error event(s) occurred")
-            first = warning_error_events[0]
-            parts.append(f"first notable: {first.get('timestamp')} {first.get('level')} — {first.get('message')}")
-
-        status = health_data.get("status")
-        if status == "UNKNOWN":
-            parts.append("Final health: UNKNOWN (insufficient parsed events or evidence)")
-        else:
-            parts.append(f"Final health: {status}")
-
-        # If a reboot diagnostic was detected, prioritize it in the executive summary
-        reboot_findings = [f for f in diagnostics.historical_findings() if getattr(f, "category", None) == "reboot" or (isinstance(f, dict) and f.get("category") == "reboot")]
-        if reboot_findings:
-            rf = reboot_findings[0]
-            if isinstance(rf, dict):
-                evidence = rf.get("evidence")
-                title = rf.get("title")
-            else:
-                evidence = getattr(rf, "evidence", None)
-                title = getattr(rf, "title", None)
-            executive_summary = f"{title or 'Reboot detected'}. {evidence or ''}".strip()
-            parts = [executive_summary]
-        else:
-            if executive_summary and "recovered" in (executive_summary or "").lower():
-                parts.append("Conditions recovered; no persistent failure detected.")
-
-        rec = "Review the notable events and monitor the device; collect more logs if recurrence occurs."
-        parts.append(f"Recommended action: {rec}")
-
-        analysis_summary = " ".join(parts) if parts else None
+        findings_dict = [finding.to_dict() for finding in diagnostics.all_findings()]
+        interpretation = build_analysis_interpretation(
+            health=health_data,
+            incidents=incidents,
+            findings=findings_dict,
+            events=events,
+            statistics={
+                "lines_total": lines_total,
+                "events_parsed": parsed_lines,
+                "unrecognized_lines": unrecognized_lines,
+            },
+        )
+        executive_summary = interpretation["summary"]
+        analysis_summary = interpretation["summary"]
 
         return {
             "source": {
@@ -617,7 +599,7 @@ class FileAnalysisService:
             "raw_lines": raw_lines,
             "metrics": [metric.to_dict() for metric in metrics],
             "health": health_data,
-            "findings": [finding.to_dict() for finding in diagnostics.all_findings()],
+            "findings": findings_dict,
             "incidents": incidents,
             "notable_events": notable_events,
             "health_explanation": health_explanation,
@@ -625,6 +607,11 @@ class FileAnalysisService:
             # Human-readable structured report for each incident
             "report": self._build_report(incidents, events),
             "analysis_summary": analysis_summary,
+            "what_happened": interpretation["what_happened"],
+            "analysis": interpretation,
+            "analysis_status": analysis_status,
+            "analysis_explanation": analysis_explanation,
+            "omitted_counts": omitted_counts,
         }
 
     def _build_report(self, incidents, events):
@@ -657,43 +644,6 @@ class FileAnalysisService:
                 if impact and impact.get("reconnect_attempts", 0) > 0:
                     possible_cause = "intermittent connection loss; check cabling, power, and serial stability"
 
-            # Generate a concise, evidence-based recommendation per category
-            if category == "reboot":
-                recommendation = (
-                    "Inspect power, watchdog, reset, and crash indicators around the reboot timestamp."
-                )
-            elif category == "connectivity":
-                recommendation = (
-                    "Check connection stability and investigate repeated disconnects or reconnect failures."
-                )
-            elif category == "timeout":
-                    # Make timeout recommendations specific to the observed timeout
-                    first_msg = (related[0].get("message") or "").lower() if related else (title or "").lower()
-                    if "command" in first_msg or "ack" in first_msg or "acknowledg" in first_msg:
-                        recommendation = (
-                            "Check endpoint responsiveness and investigate repeated acknowledgement timeouts."
-                        )
-                    elif "sensor" in first_msg:
-                        recommendation = (
-                            "Investigate sensor responsiveness and read/response timing; monitor sensor endpoints for repeated timeouts."
-                        )
-                    else:
-                        recommendation = (
-                            "Check endpoint responsiveness and investigate repeated timeouts for the affected subsystem."
-                        )
-            elif category == "memory":
-                recommendation = (
-                    "Investigate possible memory growth or leak behavior and monitor FreeRAM over a longer run."
-                )
-            elif category == "errors":
-                recommendation = (
-                    "Inspect error messages and affected subsystems; collect surrounding logs to determine persistence."
-                )
-            else:
-                recommendation = (
-                    "Review the related events and monitor for recurrence."
-                )
-
             reports.append(
                 {
                     "id": inc.get("id"),
@@ -709,7 +659,7 @@ class FileAnalysisService:
                     "evidence": evidence,
                     "related_events": related,
                     "possible_cause": possible_cause,
-                    "recommended_action": recommendation,
+                    "recommended_action": inc.get("recommended_action") or "Review the related events and monitor for recurrence.",
                 }
             )
         # If no incidents but insufficient data, return an explanatory entry

@@ -1,5 +1,6 @@
 from core.models.event import make_event
 from core.parser.base import ParseResult
+from core.parser.source_classifier import classify as classify_source
 
 
 class EventNormalizer:
@@ -61,6 +62,11 @@ class EventNormalizer:
             meta["parse_confidence"] = parse_confidence
         if raw_lines:
             meta["raw_lines"] = raw_lines
+        # source classification (conservative)
+        source_tag = parsed_data.get("tag") if isinstance(parsed_data, dict) else None
+        package = parsed_data.get("package") if isinstance(parsed_data, dict) else None
+        src_class = classify_source(source_tag, package, message or "", parse_format=parse_format)
+        meta["source_class"] = src_class
 
         category = (
             parsed_data.get("category")
@@ -88,6 +94,8 @@ class EventNormalizer:
             evt["parse_format"] = parse_format
         if parse_confidence is not None:
             evt["parse_confidence"] = parse_confidence
+        if meta.get("source_class"):
+            evt["source_class"] = meta.get("source_class")
         # optional fields from parser
         if parsed_data.get("tag"):
             evt["tag"] = parsed_data.get("tag")
