@@ -23,7 +23,13 @@ class FileReader:
         if os.path.getsize(self.path) > self.max_bytes:
             raise FileReaderError("Input file exceeds the maximum allowed size")
         try:
-            with open(self.path, "r", encoding="utf-8", errors="strict") as file:
+            with open(
+                self.path,
+                "r",
+                encoding="utf-8",
+                errors="strict",
+                newline="",
+            ) as file:
                 yield from file
         except UnicodeDecodeError as error:
             raise FileReaderError("Input file is not valid UTF-8") from error
