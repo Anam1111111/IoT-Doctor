@@ -18,7 +18,19 @@ class EventNormalizer:
     ):
         parsed_data = parsed_data or {}
         transport_metadata = dict(transport_metadata or {})
-        level = parsed_data.get("level", "?")
+        # Normalize level to canonical set: INFO, WARN, ERROR, UNKNOWN
+        raw_level = (parsed_data.get("level") or "").strip()
+        lvl = raw_level.upper()
+        if lvl in ("INFO", "INFORMATION"):
+            level = "INFO"
+        elif lvl in ("WARN", "WARNING"):
+            level = "WARN"
+        elif lvl in ("ERROR", "ERR"):
+            level = "ERROR"
+        elif raw_level == "":
+            level = None
+        else:
+            level = "UNKNOWN"
         message = parsed_data.get("message")
         if message is None:
             message = raw if isinstance(raw, str) else str(raw or "")
@@ -26,6 +38,9 @@ class EventNormalizer:
         meta = dict(transport_metadata or {})
         if parsed_data.get("timestamp"):
             meta["parsed_timestamp"] = parsed_data.get("timestamp")
+
+        # Expose category only when event_type indicates a known lifecycle
+        category = event_type if event_type != "log" else None
 
         return make_event(
             level=level,
@@ -39,4 +54,5 @@ class EventNormalizer:
             transport=transport_metadata.get("transport"),
             event_type=event_type,
             metadata=meta,
+            category=category,
         )
