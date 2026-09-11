@@ -26,7 +26,6 @@ class FileAnalysisService:
         extractor = MetricExtractor(self.profile.get("metrics"))
         diagnostics = DiagnosticEngine(historical_mode=True)
         health = HealthMonitor()
-        health.connected = True
         events = []
         metrics = []
         lines_total = 0
@@ -97,14 +96,50 @@ class FileAnalysisService:
                 event,
                 metrics=event_metrics,
                 findings=diagnostics.all_findings(),
-                connection_state="CONNECTED",
+                connection_state=None,
             )
+
+
+        # For file-imported analysis, be conservative: only mark CONNECTED when
+        # the file contains explicit evidence of successful connection/active
+        # communication (e.g., "connected", "connection established",
+        # "verification passed", "provisioning completed", "acknowledged",
+        # or explicit success/completion messages). Do NOT infer connected
+        # simply because there is no "disconnected" message.
+        def _has_positive_connection_evidence(ev_list):
+            import re
+
+            positive_patterns = [
+                r"\bconnected\b",
+                r"connection established",
+                r"handshake",
+                r"verification (passed|complete|completed|succeeded)",
+                r"provisioning (completed|success|succeeded)",
+                r"acknowledg(e|ed|ement) (received|ok|success|succeeded)",
+                r"ack (received|ok|success)",
+                r"completed successfully",
+                r"successfully (connected|provisioned|verified)",
+            ]
+            prog = re.compile("|".join(positive_patterns), re.IGNORECASE)
+            for e in ev_list:
+                msg = (e.get("message") or "")
+                # skip messages that explicitly contain timeout/fail
+                if "timeout" in msg.lower() or "failed" in msg.lower():
+                    continue
+                if prog.search(msg):
+                    return True
+            return False
+
+        if parsed_lines > 0 and _has_positive_connection_evidence(events):
+            health.connected = True
+            health.connection_state = "CONNECTED"
 
         health_data = health.status()
         # If we parsed zero structured events, mark overall health UNKNOWN
         if parsed_lines == 0:
             health_data["status"] = "UNKNOWN"
             health_data["reason"] = "Insufficient parsed events"
+            notable_events = []  # Initialize notable_events list
         # Build incident summaries from diagnostics
         # Correlate historical findings into richer incident summaries
         incidents = []
@@ -221,6 +256,20 @@ class FileAnalysisService:
                 }
             )
 
+        # Build notable events summary (WARN/ERROR) deterministically from parsed events
+        notable_events = []
+        for ev in events:
+            lvl = (ev.get("level") or "").upper()
+            if lvl in ("WARN", "WARNING", "ERROR"):
+                notable_events.append(
+                    {
+                        "timestamp": ev.get("timestamp"),
+                        "level": lvl,
+                        "message": ev.get("message"),
+                        "raw_line": ev.get("raw_line") or ev.get("raw"),
+                    }
+                )
+
         # If final health is HEALTHY but there were historical findings or transient WARN/ERROR events, provide explanation
         health_explanation = None
         if health_data.get("status") == "HEALTHY":
@@ -248,6 +297,34 @@ class FileAnalysisService:
                 + ": " + health_explanation
             )
 
+        # Build a human-readable analysis summary even when there are no incidents.
+        analysis_summary = None
+        if not incidents:
+            parts = []
+            # Notable events summary
+            if notable_events:
+                parts.append(f"{len(notable_events)} notable warning/error event(s) occurred")
+                # include first notable event brief
+                first = notable_events[0]
+                parts.append(f"first notable: {first.get('timestamp')} {first.get('level')} — {first.get('message')}")
+
+            # Health-based statements
+            status = health_data.get("status")
+            if status == "UNKNOWN":
+                parts.append("Final health: UNKNOWN (insufficient parsed events or evidence)")
+            else:
+                parts.append(f"Final health: {status}")
+
+            # Recovery inference from health_explanation or executive_summary
+            if executive_summary and "recovered" in (executive_summary or "").lower():
+                parts.append("Conditions recovered; no persistent failure detected.")
+
+            # Recommend next steps conservatively
+            rec = "Review the notable events and monitor the device; collect more logs if recurrence occurs."
+            parts.append(f"Recommended action: {rec}")
+
+            analysis_summary = " ".join(parts) if parts else None
+
         return {
             "source": {
                 "type": "file",
@@ -274,9 +351,72 @@ class FileAnalysisService:
             "health": health_data,
             "findings": [finding.to_dict() for finding in diagnostics.all_findings()],
             "incidents": incidents,
+            "notable_events": notable_events,
             "health_explanation": health_explanation,
             "executive_summary": executive_summary,
+            # Human-readable structured report for each incident
+            "report": self._build_report(incidents, events),
+            "analysis_summary": analysis_summary,
         }
+
+    def _build_report(self, incidents, events):
+        """
+        Convert correlated incidents into a deterministic, structured,
+        human-readable report suitable for UI presentation.
+        """
+        reports = []
+        for inc in incidents:
+            title = inc.get("title")
+            category = inc.get("category")
+            severity = inc.get("severity")
+            start = inc.get("start_time")
+            end = inc.get("end_time")
+            duration = inc.get("duration")
+            related = inc.get("related_events") or []
+            impact = inc.get("impact") or {}
+            evidence = inc.get("evidence")
+
+            # Build a concise narrative
+            what_happened = title
+            recovered = False
+            if impact and isinstance(impact, dict):
+                recovered = bool(impact.get("recovered"))
+
+            possible_cause = None
+            if category == "reboot":
+                possible_cause = "uptime reset observed; investigate watchdogs, crashes, or power interruptions"
+            elif category == "connectivity":
+                if impact and impact.get("reconnect_attempts", 0) > 0:
+                    possible_cause = "intermittent connection loss; check cabling, power, and serial stability"
+
+            recommendation = None
+            if severity == "CRITICAL":
+                recommendation = "Investigate immediately: check device power and connections, collect more logs."
+            else:
+                recommendation = "Review the related events and monitor for recurrence."
+
+            reports.append(
+                {
+                    "id": inc.get("id"),
+                    "title": title,
+                    "category": category,
+                    "severity": severity,
+                    "what_happened": what_happened,
+                    "start_time": start,
+                    "end_time": end,
+                    "duration": duration,
+                    "recovered": recovered,
+                    "impact": impact,
+                    "evidence": evidence,
+                    "related_events": related,
+                    "possible_cause": possible_cause,
+                    "recommended_action": recommendation,
+                }
+            )
+        # If no incidents but insufficient data, return an explanatory entry
+        if not reports and events:
+            return []
+        return reports
 
     @staticmethod
     def _event_type(parsed):
