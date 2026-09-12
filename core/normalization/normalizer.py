@@ -54,6 +54,12 @@ class EventNormalizer:
         meta = dict(transport_metadata or {})
         if parsed_data.get("timestamp"):
             meta["parsed_timestamp"] = parsed_data.get("timestamp")
+            meta["timestamp_original"] = parsed_data.get("timestamp")
+            meta["timestamp_kind"] = "absolute"
+            meta["timestamp_confidence"] = 1.0
+        else:
+            meta["timestamp_kind"] = "unknown"
+            meta["timestamp_confidence"] = 0.0
 
         # attach parser metadata
         if parse_format:
@@ -67,6 +73,8 @@ class EventNormalizer:
         package = parsed_data.get("package") if isinstance(parsed_data, dict) else None
         src_class = classify_source(source_tag, package, message or "", parse_format=parse_format)
         meta["source_class"] = src_class
+        meta["source_confidence"] = 1.0 if src_class != "UNKNOWN" else 0.0
+        meta["source_evidence"] = []
 
         category = (
             parsed_data.get("category")
@@ -103,4 +111,7 @@ class EventNormalizer:
             evt["pid"] = parsed_data.get("pid")
         if parsed_data.get("tid"):
             evt["tid"] = parsed_data.get("tid")
+        for key, value in parsed_data.items():
+            if key not in {"timestamp", "level", "message", "count", "tag", "pid", "tid", "package", "process", "component", "category"}:
+                evt.setdefault("structured_fields", {})[key] = value
         return evt

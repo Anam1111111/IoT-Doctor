@@ -2640,12 +2640,13 @@
       { label: 'Detected formats', value: formatSummary }
     ];
     const overviewStats = document.getElementById("overviewStats");
-    overviewStats.innerHTML = metricItems.map(item => `
-      <div class="assessment-item">
-        <span class="label">${item.label}</span>
-        <span class="value">${item.value}</span>
-      </div>
-    `).join('');
+    overviewStats.textContent = '';
+    metricItems.forEach(item => {
+      const row = document.createElement('div'); row.className = 'assessment-item';
+      const label = document.createElement('span'); label.className = 'label'; label.textContent = item.label;
+      const value = document.createElement('span'); value.className = 'value'; value.textContent = item.value;
+      row.append(label, value); overviewStats.appendChild(row);
+    });
 
     // Findings / Incidents
     const findingsDiv = document.getElementById("analysisFindings");
@@ -2699,16 +2700,14 @@
           const summary = document.createElement('summary');
           const recoveredCount = group.items.filter(isRecovered).length;
           const activeCount = group.items.length - recoveredCount;
-          summary.innerHTML = `
-            <span>
-              <span class="finding-group-title">${displayTitle(group.title)}</span>
-              <span class="finding-group-count">${group.items.length} occurrence${group.items.length === 1 ? '' : 's'}</span>
-            </span>
-            <span class="finding-group-meta">
-              ${recoveredCount ? `<span>${recoveredCount} recovered</span>` : ''}
-              ${activeCount ? `<span>${activeCount} active</span>` : ''}
-            </span>
-          `;
+          const summaryLeft = document.createElement('span');
+          const groupTitle = document.createElement('span'); groupTitle.className = 'finding-group-title'; groupTitle.textContent = displayTitle(group.title);
+          const groupCount = document.createElement('span'); groupCount.className = 'finding-group-count'; groupCount.textContent = `${group.items.length} occurrence${group.items.length === 1 ? '' : 's'}`;
+          summaryLeft.append(groupTitle, groupCount);
+          const summaryMeta = document.createElement('span'); summaryMeta.className = 'finding-group-meta';
+          if (recoveredCount) { const recovered = document.createElement('span'); recovered.textContent = `${recoveredCount} recovered`; summaryMeta.appendChild(recovered); }
+          if (activeCount) { const active = document.createElement('span'); active.textContent = `${activeCount} active`; summaryMeta.appendChild(active); }
+          summary.append(summaryLeft, summaryMeta);
           const detailsWrap = document.createElement('div');
           detailsWrap.className = 'finding-group-details';
           group.items.forEach(i => {

@@ -16,6 +16,7 @@ def make_event(
     metadata=None,
     category=None,
     source=None,
+    event_id=None,
 ):
     """
     Build the normalized event dict used by health, storage, and the UI.
@@ -34,7 +35,8 @@ def make_event(
             ts = datetime.now().strftime("%H:%M:%S")
 
     event = {
-        "id": str(uuid4()),
+        "id": event_id or str(uuid4()),
+        "event_id": event_id or None,
         "timestamp": ts,
         "device_id": device_id,
         "transport": transport,
@@ -44,7 +46,17 @@ def make_event(
         "count": count,
         "symbol": symbol or "❓",
         "metadata": metadata or {},
+        "trust_state": (metadata or {}).get("trust_state", "PARTIALLY_PARSED"),
+        "normalization_confidence": (metadata or {}).get("normalization_confidence", 0.0),
     }
+    if event["event_id"] is None:
+        event["event_id"] = event["id"]
+    event["timestamp_original"] = (metadata or {}).get("timestamp_original")
+    event["timezone"] = (metadata or {}).get("timezone")
+    event["timestamp_kind"] = (metadata or {}).get("timestamp_kind", "unknown")
+    event["timestamp_confidence"] = (metadata or {}).get("timestamp_confidence", 0.0)
+    event["source_confidence"] = (metadata or {}).get("source_confidence", 0.0)
+    event["source_evidence"] = (metadata or {}).get("source_evidence", [])
     if source:
         event["source"] = source
     if port:

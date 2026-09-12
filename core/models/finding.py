@@ -21,6 +21,9 @@ class Finding:
     resolved_at: str | None = None
     resolution_reason: str | None = None
     metadata: dict = field(default_factory=dict)
+    supporting_event_ids: list[str] = field(default_factory=list)
+    supporting_source_lines: list[int] = field(default_factory=list)
+    evidence_claims: list[dict] = field(default_factory=list)
 
     def __post_init__(self):
         if self.created_at is None:
