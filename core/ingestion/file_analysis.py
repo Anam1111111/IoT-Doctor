@@ -1,8 +1,11 @@
 import os
+import re
 from datetime import datetime
+from uuid import uuid4
 
 from core.diagnostics import DiagnosticEngine
 from core.analysis_summary import build_analysis_interpretation
+from core.schema import SCHEMA_VERSION
 from core.health.monitor import HealthMonitor
 from core.ingestion.file_reader import FileReader
 from core.metrics import MetricExtractor
@@ -21,6 +24,7 @@ class FileAnalysisService:
 
     def analyze(self, path, metadata=None):
         metadata = dict(metadata or {})
+        analysis_id = str(uuid4())
         filename = metadata.get("source_filename", os.path.basename(path))
         normalizer = EventNormalizer(
             device_id=metadata.get("device_name", self.profile.get("name")),
@@ -37,6 +41,8 @@ class FileAnalysisService:
         unrecognized_lines = 0
         parsed_lines = 0
         raw_lines = []
+        source_byte_offsets = []
+        source_byte_cursor = 0
         # Generic timestamp patterns to support:
         # - YYYY-MM-DD HH:MM:SS
         # - YYYY-MM-DD HH:MM:SS.sss
@@ -46,6 +52,7 @@ class FileAnalysisService:
             r"^(?P<timestamp>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?)"
             r"\s*\[(?P<level>\w+)\]\s*(?:(?P<component>[^:]+):\s*)?(?P<message>.+)$"
         )
+        generic_level_re = re.compile(r"^(?P<level>INFO|WARN|WARNING|ERROR|ERR|DEBUG|TRACE)\s+(?P<message>.+)$", re.IGNORECASE)
         # Parser registry + detector
         from core.parser import registry as parser_registry
         from core.parser import detector
@@ -61,6 +68,8 @@ class FileAnalysisService:
             lines_total += 1
             all_lines.append(raw_line)
             raw_lines.append(raw_line)
+            source_byte_offsets.append(source_byte_cursor)
+            source_byte_cursor += len(raw_line.encode("utf-8"))
 
         from core.parser.multiline import coalesce
         groups = coalesce([l.rstrip("\r\n") for l in all_lines])
@@ -78,10 +87,14 @@ class FileAnalysisService:
             omitted_counts["raw_lines"] = len(raw_lines) - max_return_raw_lines
             raw_lines = raw_lines[:max_return_raw_lines]
 
+        source_line_cursor = 0
         # Now iterate grouped events (each group is one or more raw lines)
         for group in groups:
             line = "\n".join(group)
             raw_lines_for_event = group
+            source_line_start = source_line_cursor + 1
+            source_line_cursor += len(group)
+            source_byte_start = source_byte_offsets[source_line_start - 1] if source_byte_offsets else 0
             # Detect best parser
             parsed = None
             structured = False
@@ -111,8 +124,6 @@ class FileAnalysisService:
                 parse_result = None
 
             if parse_result is None:
-                import re
-
                 m = re.match(generic_ts_re, line)
                 if m:
                     parsed = {k: v for k, v in m.groupdict().items() if v is not None}
@@ -129,7 +140,12 @@ class FileAnalysisService:
                     structured = True
                     parse_result = None
                 else:
-                    parsed = {"message": line, "raw": line, "level": "UNKNOWN"}
+                    level_match = generic_level_re.match(line)
+                    if level_match:
+                        parsed = {k: v for k, v in level_match.groupdict().items() if v is not None}
+                        structured = True
+                    else:
+                        parsed = {"message": line, "raw": line, "level": "UNKNOWN"}
                     try:
                         temp_event = normalizer.normalize(
                             parsed,
@@ -147,18 +163,12 @@ class FileAnalysisService:
 
                     if temp_metrics:
                         structured = True
-                    else:
-                        if getattr(self, '_explicit_parser_provided', False):
-                            low = line.lower()
-                            if any(k in low for k in ("disconnected", "reconnect", "retry", "connected")):
-                                structured = True
-                            else:
-                                unrecognized_lines += 1
-                        else:
-                            unrecognized_lines += 1
+                    elif not structured:
+                        unrecognized_lines += 1
                         parse_result = None
 
             if parse_result:
+                trust_state = "PARSED" if parse_result.confidence >= 0.8 else "PARTIALLY_PARSED"
                 event = normalizer.normalize(
                     parse_result.fields,
                     raw=line,
@@ -166,22 +176,33 @@ class FileAnalysisService:
                         "transport": "file",
                         "source": parse_result.format,
                         "filename": filename,
+                        "analysis_id": analysis_id,
+                        "source_line_start": source_line_start,
+                        "source_line_end": source_line_start + len(group) - 1,
+                        "source_byte_start": source_byte_start,
+                        "trust_state": trust_state,
+                        "normalization_confidence": parse_result.confidence,
                     },
                     event_type=self._event_type(parse_result.fields),
                 )
                 parsed_lines += 1
                 event["parse_format"] = parse_result.format
                 event["parse_confidence"] = parse_result.confidence
-                event["raw_lines"] = parse_result.raw_lines or raw_lines_for_event
+                event["raw_lines"] = raw_lines_for_event
+                event["source_line_start"] = source_line_start
+                event["source_line_end"] = source_line_start + len(group) - 1
+                event["source_byte_start"] = source_byte_start
+                event["source_byte_offset"] = source_byte_start
+                event["trust_state"] = trust_state
 
                 try:
                     event_metrics = extractor.extract(event)
-                    force_diag = bool(self.profile.get("allow_unparsed_diagnostics", False))
-                    if parse_result.confidence >= 0.5 or force_diag:
+                    if trust_state == "PARSED":
                         diagnostics.process(event, event_metrics)
                 except Exception:
                     event_metrics = []
             else:
+                fallback_trust = "PARSED" if structured and parsed.get("message") and parsed.get("level") else ("PARTIALLY_PARSED" if structured else "PRESERVED_ONLY")
                 event = normalizer.normalize(
                     parsed,
                     raw=line,
@@ -189,6 +210,12 @@ class FileAnalysisService:
                         "transport": "file",
                         "source": "file",
                         "filename": filename,
+                        "analysis_id": analysis_id,
+                        "source_line_start": source_line_start,
+                        "source_line_end": source_line_start + len(group) - 1,
+                        "source_byte_start": source_byte_start,
+                        "trust_state": fallback_trust,
+                        "normalization_confidence": 0.8 if fallback_trust == "PARSED" else 0.3,
                     },
                     event_type=self._event_type(parsed),
                 )
@@ -196,12 +223,20 @@ class FileAnalysisService:
                     event_metrics = extractor.extract(event)
                 except Exception:
                     event_metrics = []
-                if structured:
+                event["source_line_start"] = source_line_start
+                event["source_line_end"] = source_line_start + len(group) - 1
+                event["source_byte_start"] = source_byte_start
+                event["source_byte_offset"] = source_byte_start
+                event["raw_lines"] = raw_lines_for_event
+                event["trust_state"] = fallback_trust
+                if structured and event["trust_state"] == "PARSED":
                     parsed_lines += 1
                     try:
                         diagnostics.process(event, event_metrics)
                     except Exception:
                         pass
+                elif not structured:
+                    event["trust_state"] = "PRESERVED_ONLY"
 
             events.append(event)
             metrics.extend(event_metrics)
@@ -393,6 +428,7 @@ class FileAnalysisService:
             incidents.append(
                 {
                     "id": getattr(f, "id", None),
+                    "incident_id": str(uuid4()),
                     "category": f.category,
                     "title": f.title,
                     "severity": f.severity,
@@ -474,6 +510,7 @@ class FileAnalysisService:
             incidents.append(
                 {
                     "id": None,
+                    "incident_id": str(uuid4()),
                     "category": "timeout",
                     "title": title_text,
                     "severity": "WARNING",
@@ -490,6 +527,22 @@ class FileAnalysisService:
                     "impact": {"recovered": True},
                 }
             )
+
+        for incident in incidents:
+            related = incident.get("related_events") or []
+            incident["supporting_event_ids"] = [event.get("event_id", event.get("id")) for event in related]
+            incident["supporting_source_lines"] = [line_number for event in related for line_number in range(event.get("source_line_start", 0), event.get("source_line_end", 0) + 1)]
+            incident["evidence_claims"] = [{
+                "claim": incident.get("title"),
+                "supporting_event_ids": incident["supporting_event_ids"],
+                "supporting_source_lines": incident["supporting_source_lines"],
+                "evidence_text": incident.get("evidence"),
+                "confidence": 1.0,
+            }]
+
+        finding_incident_index = {}
+        for incident in incidents:
+            finding_incident_index.setdefault((incident.get("category"), incident.get("title")), []).append(incident)
 
         # Build notable events summary (WARN/ERROR) deterministically from parsed events
         notable_events = []
@@ -560,7 +613,24 @@ class FileAnalysisService:
                 health_data["reason"] = "Insufficient connection evidence in imported log"
                 health_data["connection_state"] = "UNKNOWN"
 
-        findings_dict = [finding.to_dict() for finding in diagnostics.all_findings()]
+        all_finding_objects = diagnostics.all_findings()
+        for finding in all_finding_objects:
+            related = [event for event in events if event.get("category") == finding.category or (finding.category == "connectivity" and event.get("event_type") == "connection")]
+            matching_incidents = finding_incident_index.get((finding.category, finding.title), [])
+            if matching_incidents and matching_incidents[0].get("supporting_event_ids"):
+                related_ids = set(matching_incidents[0]["supporting_event_ids"])
+                related = [event for event in events if event.get("event_id") in related_ids]
+                matching_incidents.pop(0)
+            finding.supporting_event_ids = [event["event_id"] for event in related]
+            finding.supporting_source_lines = [line_number for event in related for line_number in range(event.get("source_line_start", 0), event.get("source_line_end", 0) + 1)]
+            finding.evidence_claims = [{
+                "claim": finding.title,
+                "supporting_event_ids": finding.supporting_event_ids,
+                "supporting_source_lines": finding.supporting_source_lines,
+                "evidence_text": finding.evidence,
+                "confidence": finding.confidence,
+            }]
+        findings_dict = [finding.to_dict() for finding in all_finding_objects]
         interpretation = build_analysis_interpretation(
             health=health_data,
             incidents=incidents,
@@ -580,6 +650,16 @@ class FileAnalysisService:
                 "type": "file",
                 "filename": filename,
                 "device": metadata.get("device_name", self.profile.get("name", "UNKNOWN")),
+            },
+            "schema_version": SCHEMA_VERSION,
+            "analysis_id": analysis_id,
+            "analysis_metadata": {
+                "schema_version": SCHEMA_VERSION,
+                "parser_versions": sorted({event.get("parse_format") for event in events if event.get("parse_format")}),
+                "profile_name": self.profile.get("name"),
+                "profile_path": self.profile.get("profile_path"),
+                "diagnostic_engine_version": "current",
+                "summary_builder_version": "current",
             },
             "session": {
                 "id": f"file-{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
@@ -647,6 +727,7 @@ class FileAnalysisService:
             reports.append(
                 {
                     "id": inc.get("id"),
+                    "incident_id": inc.get("incident_id"),
                     "title": title,
                     "category": category,
                     "severity": severity,

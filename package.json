@@ -1,0 +1,10 @@
+{
+  "name": "iot-debugger-tests",
+  "private": true,
+  "scripts": {
+    "test:xss": "node tests/test_runtime_xss.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^27.1.0"
+  }
+}

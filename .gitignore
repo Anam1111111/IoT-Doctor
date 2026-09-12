@@ -14,3 +14,6 @@ __pycache__/
 
 # Generated runtime session data
 sessions/
+
+# Node test dependencies
+node_modules/

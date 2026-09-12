@@ -58,7 +58,7 @@ async def list_sessions():
 
 @app.post("/analyze/file")
 async def analyze_file(file: UploadFile = File(...)):
-    filename = file.filename or ""
+    filename = os.path.basename((file.filename or "").replace("\\", "/"))
     if os.path.splitext(filename)[1].lower() not in {".log", ".txt"}:
         await file.close()
         raise HTTPException(status_code=415, detail="Only .log and .txt files are supported")
